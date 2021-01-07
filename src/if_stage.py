@@ -3,7 +3,7 @@ from pyhcl import *
 
 def if_stage(PULP_XPULP=0, PULP_OBI=0, PULP_SCORE=0, FPU=0):
     class IF_STAGE(Module):
-        pass
+        io = IO()
 
     return IF_STAGE()
 
