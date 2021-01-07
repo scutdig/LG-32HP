@@ -1,3 +1,8 @@
+"""
+Author:         Ruohui Chen
+Date:           2020-01-06
+Design Name:    Instruction Fetch Stage
+"""
 from pyhcl import *
 
 
