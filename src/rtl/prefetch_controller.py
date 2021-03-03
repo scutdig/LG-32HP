@@ -76,7 +76,8 @@ def prefetch_controller(PULP_OBI=0, DEPTH=4):
         ##################################################################################
 
         # Using Python built-in Enum
-        state_q, next_state = [RegInit(U.w(1)(0)) for _ in range(2)]
+        state_q = RegInit(U.w(1)(0))
+        next_state = Wire(U.w(1))
 
         # Transaction counter and Next value for cnt_q
         cnt_q, nex_cnt = [RegInit(U.w(FIFO_ADDR_DEPTH)(0)) for _ in range(2)]
@@ -158,6 +159,39 @@ def prefetch_controller(PULP_OBI=0, DEPTH=4):
         fifo_cnt_masked <<= Mux(io.branch_i, U(0), io.fifo_cnt_i)
 
         # FSM (state_q, next_state) to control OBI A channel signals
+        # The address channel called A channel (The response channel called R channel)
+        next_state <<= state_q
+        io.trans_addr_o <<= trans_addr_q
 
+        with when(state_q == Prefetch_State.IDLE):
+            # Default state (pass on branch target address or transaction with incremented address)
+            with when(io.branch_i):
+                # Jumps must have the highest priority
+                # @Ruohui Chen: In our implementation, we deprecated hardware loops
+                io.trans_addr_o <<= aligned_branch_addr
+            with otherwise():
+                io.trans_addr_o <<= trans_addr_incr
+            with when(io.branch_i & (~(io.trans_valid_o & io.trans_ready_i))):
+                # Taken branch, but transaction not yet accepted by bus interface adapter.
+                next_state <<= Prefetch_State.BRANCH_WAIT
+            # End Case: IDLE
+        with elsewhen(state_q == Prefetch_State.BRANCH_WAIT):
+            # Replay previous branch target address (trans_addr_q) or new branch address (this can
+            # occur if for example an interrupt is taken right after a taken jump which did not
+            # yet have its target address accepted by the bus interface adapter
+            io.trans_addr_o <<= Mux(io.branch_i, aligned_branch_addr, trans_addr_q)
+            with when(io.trans_valid_o & io.trans_realdy_i):
+                # Transaction with branch target address has been accepted. Start regular prefetch agian
+                next_state <<= Prefetch_State.IDLE
+            # End Case: BRANCH_WAIT
+        with otherwise():
+            pass
+
+        ##################################################################################
+        # FIFO management
+        ##################################################################################
+
+        # Pass on response transfer directly to FIFO (which should be ready, otherwise
+        # the corresponding transfer would not have been requested via trans_valid_o).
 
     return PREFETCH_CONTROLLER()
