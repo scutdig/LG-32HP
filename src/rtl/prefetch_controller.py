@@ -27,7 +27,7 @@ Copyright Digisim, Computer Architecture team of South China University of Techn
                  outstanding transactions." -- original RIS5Y annotation
 """
 from pyhcl import *
-from ..include.pkg import *
+from src.include.pkg import *
 from math import log
 
 
@@ -68,7 +68,7 @@ def prefetch_controller(PULP_OBI=0, DEPTH=4):
             fifo_flush_o=Output(Bool),              # Flush the FIFO
             fifo_flush_but_first_o=Output(Bool),    # Flush the FIFO, but keep the first instruction if present
             fifo_cnt_i=Input(U.w(FIFO_ADDR_DEPTH)), # Number of valid items/words in the prefetch FIFO
-            fifo_empty_i=Input(U.w(Bool))           # FIFO is empty
+            fifo_empty_i=Input(Bool)                # FIFO is empty
         )
 
         ##################################################################################
@@ -76,17 +76,20 @@ def prefetch_controller(PULP_OBI=0, DEPTH=4):
         ##################################################################################
 
         # Using Python built-in Enum
-        state_q, next_state = [RegInit(U.w(1)(0)) for _ in range(2)]
+        state_q = RegInit(U.w(1)(0))        # reset state: IDLE
+        next_state = Wire(U.w(1))
 
         # Transaction counter and Next value for cnt_q
-        cnt_q, nex_cnt = [RegInit(U.w(FIFO_ADDR_DEPTH)(0)) for _ in range(2)]
+        cnt_q = RegInit(U.w(FIFO_ADDR_DEPTH)(0))
+        next_cnt = Wire(U.w(FIFO_ADDR_DEPTH))
 
-        count_up = Wire(Bool)   # Increment outstanding transaction count by 1 (can happen at same time as count_down)
-        count_down = Wire(Bool) # Decrement outstanding transaction count by 1 (can happen at same time as count_up)
+        count_up = Wire(Bool)     # Increment outstanding transaction count by 1 (can happen at same time as count_down)
+        count_down = Wire(Bool)   # Decrement outstanding transaction count by 1 (can happen at same time as count_up)
 
         # Response flush counter and Next value for flush_cnt_q
         # To flush speculative responses after branch
-        flush_cnt_q, next_flush_cnt = [RegInit(U.w(FIFO_ADDR_DEPTH)(0)) for _ in range(2)]
+        flush_cnt_q = RegInit(U.w(FIFO_ADDR_DEPTH)(0))
+        next_flush_cnt = Wire(U.w(FIFO_ADDR_DEPTH))
 
         # Transaction address
         trans_addr_q = RegInit(U.w(32)(0))
@@ -129,7 +132,7 @@ def prefetch_controller(PULP_OBI=0, DEPTH=4):
         aligned_branch_addr <<= CatBits(io.branch_addr_i[31:2], U.w(2)(0))
 
         # Increment address (always WORD fetch)
-        trans_addr_incr <<= CatBits(io.trans_addr_q[31:2], U.w(2)(0)) + U.w(32)(4)
+        trans_addr_incr <<= CatBits(trans_addr_q[31:2], U.w(2)(0)) + U.w(32)(4)
 
         # Transaction request generation
         if PULP_OBI == 0:
@@ -158,6 +161,106 @@ def prefetch_controller(PULP_OBI=0, DEPTH=4):
         fifo_cnt_masked <<= Mux(io.branch_i, U(0), io.fifo_cnt_i)
 
         # FSM (state_q, next_state) to control OBI A channel signals
+        # The address channel called A channel (The response channel called R channel)
+        next_state <<= state_q
+        io.trans_addr_o <<= trans_addr_q
 
+        with when(state_q == PState_IDLE):
+            # Default state (pass on branch target address or transaction with incremented address)
+            with when(io.branch_i):
+                # Jumps must have the highest priority
+                # @Ruohui Chen: In our implementation, we deprecated hardware loops
+                io.trans_addr_o <<= aligned_branch_addr
+            with otherwise():
+                io.trans_addr_o <<= trans_addr_incr
+            with when(io.branch_i & (~(io.trans_valid_o & io.trans_ready_i))):
+                # Taken branch, but transaction not yet accepted by bus interface adapter.
+                next_state <<= PState_BRANCH_WAIT
+            # End Case: IDLE
+        with elsewhen(state_q == PState_BRANCH_WAIT):
+            # Replay previous branch target address (trans_addr_q) or new branch address (this can
+            # occur if for example an interrupt is taken right after a taken jump which did not
+            # yet have its target address accepted by the bus interface adapter
+            io.trans_addr_o <<= Mux(io.branch_i, aligned_branch_addr, trans_addr_q)
+            with when(io.trans_valid_o & io.trans_ready_i):
+                # Transaction with branch target address has been accepted. Start regular prefetch agian
+                next_state <<= PState_IDLE
+            # End Case: BRANCH_WAIT
+
+        ##################################################################################
+        # FIFO management
+        ##################################################################################
+
+        # Pass on response transfer directly to FIFO (which should be ready, otherwise
+        # the corresponding transfer would not have been requested via trans_valid_o).
+        # Upon a branch (branch_i) all incoming responses (resp_valid_i) are flushed
+        # until the flush count is 0 again. (The flush count is initialized with the
+        # number of outstanding transactions at the time of the branch).
+        fifo_valid <<= ~io.fifo_empty_i
+        # PyHCL doesn't support logical AND OR yet
+        flush_cnt_exist = Wire(Bool)
+        flush_cnt_exist <<= Mux(flush_cnt_q > U(0), Bool(True), Bool(False))
+        io.fifo_push_o <<= io.resp_valid_i & (fifo_valid | (~io.fetch_ready_i)) & (~(io.branch_i | flush_cnt_exist))
+        io.fifo_pop_o <<= fifo_valid & io.fetch_ready_i
+
+        ##################################################################################
+        # Counter (cnt_q, next_cnt) to count number of outstanding OBI transactions
+        # (maximum = DEPTH)
+        #
+        # Counter overflow is prevented by limiting the number of outstanding transactions
+        # to DEPTH. Counter underflow is prevented by the assumption that resp_valid_i = 1
+        # will only occur in response to accepted transfer request (as per the OBI protocol).
+        ##################################################################################
+        count_up <<= io.trans_valid_o & io.trans_ready_i    # Increment upon accepted transfer request
+        count_down <<= io.resp_valid_i                      # Decrement upon accepted transfer response
+
+        next_cnt <<= LookUpTable(CatBits(count_up, count_down), {
+            U.w(2)(0): cnt_q,               # No request or response
+            U.w(2)(1): cnt_q - U.w(1)(1),   # No request, incoming response
+            U.w(2)(2): cnt_q + U.w(1)(1),   # Incoming request, no response
+            U.w(2)(3): cnt_q,               # Incoming request and response
+            ...: cnt_q                      # Default
+        })
+
+        # in our implementation, we deprecated the PULP XPULP extension
+        # We only implemented PULP_XPULP == 0 condition
+
+        # When branch incoming, flush the FIFO if it is not empty
+        io.fifo_flush_o <<= io.branch_i
+        io.fifo_flush_but_first_o <<= U.w(1)(0)
+
+        ##################################################################################
+        # Counter (flush_cnt_q, next_flush_cnt) to count responses to be flushed.
+        ##################################################################################
+
+        next_flush_cnt <<= flush_cnt_q
+
+        # Number of outstanding transfers at time of branch equals the number of
+        # responses that will need to be flushed (responses already in the FIFO will
+        # be flushed here)
+        # @Ruohui Chen: How to flush? -- Deprecated the response data until flush_cnt_q == 0
+        with when(io.branch_i):
+            next_flush_cnt <<= cnt_q
+            with when(io.resp_valid_i & (cnt_q > U(0))):
+                next_flush_cnt <<= cnt_q - U.w(1)(1)
+        with elsewhen(io.resp_valid_i & (flush_cnt_q > U(0))):
+            next_flush_cnt <<= flush_cnt_q - U.w(1)(1)
+
+        ##################################################################################
+        # Registers
+        ##################################################################################
+
+        # In PyHCL, all assignments (<<=) of registers will generate ff region code
+        # We defined next_* type registers as Wire to imitate the style of Verilog/SV
+        # In fact, the FIRRTL compiler will optimize the redundant wires.
+        state_q <<= next_state
+        cnt_q <<= next_cnt
+        flush_cnt_q <<= next_flush_cnt
+        with when(io.branch_i | (io.trans_valid_o & io.trans_ready_i)):
+            trans_addr_q <<= io.trans_addr_o
 
     return PREFETCH_CONTROLLER()
+
+
+if __name__ == '__main__':
+    Emitter.dumpVerilog(Emitter.dump(Emitter.emit(prefetch_controller()), "prefetch_controller.fir"))
