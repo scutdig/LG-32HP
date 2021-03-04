@@ -23,9 +23,8 @@ from enum import Enum
 
 
 # Prefetch controller state (for FSM)
-class Prefetch_State(Enum):
-    IDLE = U.w(1)(0)
-    BRANCH_WAIT = U.w(1)(1)
+PState_IDLE = U.w(1)(0)
+PState_BRANCH_WAIT = U.w(1)(1)
 
 
 # OpCodes
