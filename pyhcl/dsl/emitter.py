@@ -36,3 +36,7 @@ class Emitter:
     @staticmethod
     def dumpVerilog(filename):
         os.system('firrtl -i %s -o %s -X verilog' % (filename, filename))
+
+    @staticmethod
+    def dumpVerilog_nock(filename):
+        os.system('firrtl -i %s -o %s -X verilog --no-check-comb-loops' % (filename, filename))
