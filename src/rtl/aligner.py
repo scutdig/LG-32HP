@@ -21,16 +21,16 @@ Copyright Digisim, Computer Architecture team of South China University of Techn
 
 from pyhcl import *
 
-# aligner stage parameter
-ALIGNED32 = U.w(3)(0)
-MISALIGNED32 = U.w(3)(1)
-MISALIGNED16 = U.w(3)(2)
-BRANCH_MISALIGNED = U.w(3)(3)
-WAIT_VALID_BRANCH = U.w(3)(4)
-
 
 def aligner():
     class ALIGNER(Module):
+        # aligner stage local parameter
+        ALIGNED32 = U.w(3)(0)
+        MISALIGNED32 = U.w(3)(1)
+        MISALIGNED16 = U.w(3)(2)
+        BRANCH_MISALIGNED = U.w(3)(3)
+        WAIT_VALID_BRANCH = U.w(3)(4)
+
         io = IO(
             fetch_valid_i=Input(Bool),
             aligner_ready_o=Output(Bool),  # prevents overwriting the fetched instruction
