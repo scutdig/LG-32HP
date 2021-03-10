@@ -67,7 +67,7 @@ def decoder(PULP_SECURE=0, USE_PMP=0, DEBUG_TRIGGER_EN=1):
             # are deprecated currently in our implementation
             imm_a_mux_sel_o=Output(Bool),           # Immediate selection for operand a
             imm_b_mux_sel_o=Output(U.w(4)),         # Immediate selection for operand b
-            regc_mux_o=Output(U.w(2)),              # Register C selection: S3, RD or 0
+            regc_mux_o=Output(U.w(2)),              # Register c selection: S3, RD or 0
             # is_clpx_o and is_subrot_o are deprecated currently in our implementation
 
             # MUL related control signals
@@ -134,5 +134,157 @@ def decoder(PULP_SECURE=0, USE_PMP=0, DEBUG_TRIGGER_EN=1):
 
         alu_en <<= Bool(True)
         io.alu_operator_o <<= ALU_SLTU
+        io.alu_op_a_mux_sel_o <<= OP_A_REGA_OR_FWD
+        io.alu_op_b_mux_sel_o <<= OP_B_REGB_OR_FWD
+        io.alu_op_c_mux_sel_o <<= OP_C_REGC_OR_FWD
+        io.regc_mux_o <<= REGC_ZERO
+        io.imm_a_mux_sel_o <<= IMMA_ZERO
+        io.imm_b_mux_sel_o <<= IMMB_I
+
+        io.mult_operator_o <<= MUL_I
+        io.mult_int_en <<= Bool(False)
+        io.mult_imm_mux_o <<= MIMM_ZERO
+        io.mult_signed_mode_o <<= U.w(2)(0)
+
+        regfile_mem_we <<= Bool(False)
+        regfile_alu_we <<= Bool(False)
+        io.regfile_alu_waddr_sel_o <<= Bool(True)
+
+        io.csr_access_o <<= Bool(False)
+        io.csr_statues_o <<= Bool(False)
+        csr_illegal <<= Bool(False)
+        csr_op <<= CSR_OP_READ
+        io.mret_insn_o <<= Bool(False)
+        io.uret_insn_o <<= Bool(False)
+        io.dret_insn_o <<= Bool(False)
+
+        io.data_we_o <<= Bool(False)
+        io.data_type_o <<= U.w(2)(0)
+        io.data_sign_extension_o <<= U.w(2)(0)
+        io.data_reg_offset_o <<= U.w(2)(0)
+        data_req <<= Bool(False)
+        io.prepost_useincr_o <<= Bool(True)
+
+        io.illegal_insn_o <<= Bool(False)
+        io.ebrk_insn_o <<= Bool(False)
+        io.ecall_insn_o <<= Bool(False)
+        io.wfi_o <<= Bool(False)
+
+        io.fencei_insn_o <<= Bool(False)
+
+        io.rega_used_o <<= Bool(False)
+        io.regb_used_o <<= Bool(False)
+        io.regc_used_o <<= Bool(False)
+
+        io.mret_dec_o <<= Bool(False)
+        io.uret_dec_o <<= Bool(False)
+        io.dret_dec_o <<= Bool(False)
+
+        ##################################################################################
+        # Jumps
+        ##################################################################################
+        # OPCODE Mux
+        with when(io.instr_rdata_i[6:0] == OPCODE_JAL):
+            # Jump and Link
+            io.ctrl_transfer_target_mux_sel_o <<= JT_JAL
+            ctrl_transfer_insn <<= BRANCH_JAL
+            # Calculate and store PC+4
+            io.alu_op_a_mux_sel_o <<= OP_A_CURRPC
+            io.alu_op_b_mux_sel_o <<= OP_B_IMM
+            io.imm_b_mux_sel_o <<= IMMB_PCINCR
+            io.alu_operator_o <<= ALU_ADD
+            regfile_alu_we <<= Bool(True)
+            # Calculate jump target (= PC + UJ imm)
+        with elsewhen(io.instr_rdata_i[6:0] == OPCODE_JALR):
+            # Jump and Link Register
+            io.ctrl_transfer_target_mux_sel_o <<= JT_JALR
+            ctrl_transfer_insn <<= BRANCH_JALR
+            # Calculate and store PC+4
+            io.alu_op_a_mux_sel_o <<= OP_A_CURRPC
+            io.alu_op_b_mux_sel_o <<= OP_B_IMM
+            io.imm_b_mux_sel_o <<= IMMB_PCINCR
+            io.alu_operator_o <<= ALU_ADD
+            regfile_alu_we <<= Bool(True)
+            # Calculate jump target (= RS1 + I imm)
+            io.rega_used_o <<= Bool(True)
+
+            with when(io.instr_rdata_i[14:12] != U.w(3)(0)):
+                # funct3 != 0x000
+                ctrl_transfer_insn <<= BRANCH_NONE
+                regfile_alu_we <<= Bool(False)
+                io.illegal_insn_o <<= Bool(True)
+        with elsewhen(io.instr_rdata_i[6:0] == OPCODE_BRANCH):
+            # All Branch instructions
+            io.ctrl_transfer_target_mux_sel_o <<= JT_COND
+            ctrl_transfer_insn <<= BRANCH_COND
+            io.alu_op_c_mux_sel_o <<= OP_C_JT
+            io.rega_used_o <<= Bool(True)
+            io.regb_used_o <<= Bool(True)
+
+            # PULP_XPULP always == 0
+            # funct3
+            io.alu_operator_o <<= LookUpTable(io.instr_rdata_i[14:12], {
+                U.w(3)(0x000): ALU_EQ,
+                U.w(3)(0x001): ALU_NE,
+                U.w(3)(0x100): ALU_LTS,
+                U.w(3)(0x101): ALU_GES,
+                U.w(3)(0x110): ALU_LTU,
+                U.w(3)(0x111): ALU_GEU,
+                ...: ALU_SLTU
+            })
+            with when((io.instr_rdata_i[14:12] == U.w(3)(0x010)) |
+                      (io.instr_rdata_i[14:12] == U.w(3)(0x011))):
+                io.illegal_insn_o <<= Bool(True)
+
+        ##################################################################################
+        # LD/ST
+        ##################################################################################
+        # All Store
+        with elsewhen(io.instr_rdata_i[6:0] == OPCODE_STORE):
+            data_req <<= Bool(True)
+            io.data_we_o <<= Bool(True)
+            io.rega_used_o <<= Bool(True)
+            io.regb_used_o <<= Bool(True)
+            io.alu_operator_o <<= ALU_ADD
+            # Pass write data through ALU operand c
+            io.alu_op_c_mux_sel_o <<= OP_C_REGB_OR_FWD
+
+            # PULP_XPULP always == 0
+            with when(io.instr_rdata_i[14] == U.w(1)(0)):
+                io.imm_b_mux_sel_o <<= IMMB_S
+                io.alu_op_b_mux_sel_o <<= OP_B_IMM
+            with otherwise():
+                io.illegal_insn_o <<= Bool(True)
+
+            # funct3
+            io.data_type_o <<= LookUpTable(io.instr_rdata_i[13:12], {
+                U.w(2)(0x00): U.w(2)(0x10),      # SB
+                U.w(2)(0x01): U.w(2)(0x01),      # SH
+                U.w(2)(0x10): U.w(2)(0x00),      # SW
+                ...: U.w(2)(0x00)
+            })
+
+            with when(io.instr_rdata_i[13:12] == U.w(2)(0x11)):
+                # Undefined
+                data_req <<= Bool(False)
+                io.data_we_o <<= Bool(False)
+                io.illegal_insn_o <<= Bool(True)
+
+        # All Load
+        with elsewhen(io.instr_rdata_i[6:0] == OPCODE_LOAD):
+            data_req <<= Bool(True)
+            io.regfile_mem_we <<= Bool(True)
+            io.rega_used_o <<= Bool(True)
+            io.data_type_o <<= U.w(2)(0x00)     # Read always read word
+            # offset from immediate
+            io.alu_operator_o <<= ALU_ADD
+            io.alu_op_b_mux_sel_o <<= OP_B_IMM
+            io.imm_b_mux_sel_o <<= IMMB_I
+
+            # sign/zero extension
+            # funct3[2] (bit 14): Zero (= 1), Sign (= 0)
+            # Output
+            io.data_sign_extension_o <<= CatBits(U.w(1)(0), ~io.instr_rdata_i[14])
+
 
     return DECODER()

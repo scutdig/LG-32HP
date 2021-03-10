@@ -229,3 +229,9 @@ BRANCH_COND = U.w(2)(0x11)  # conditional branches
 JT_JAL  = U.w(2)(0x01)
 JT_JALR = U.w(2)(0x10)
 JT_COND = U.w(2)(0x11)
+
+# RegC Mux Selection
+REGC_S1 = U.w(2)(0x10)
+REGC_S4 = U.w(2)(0x00)
+REGC_RD = U.w(2)(0x01)
+REGC_ZERO = U.w(2)(0x11)
