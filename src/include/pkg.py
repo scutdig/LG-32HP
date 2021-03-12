@@ -500,3 +500,76 @@ CSR_MVENDORID      = U.w(12)(0xF11)
 CSR_MARCHID        = U.w(12)(0xF12)
 CSR_MIMPID         = U.w(12)(0xF13)
 CSR_MHARTID        = U.w(12)(0xF14)
+
+# Controller FSM state encoding
+CTRL_STATE_WIDTH = 5
+
+RESET           = U.w(5)(0)
+BOOT_SET        = U.w(5)(1)
+SLEEP           = U.w(5)(2)
+WAIT_SLEEP      = U.w(5)(3)
+FIRST_FETCH     = U.w(5)(4)
+DECODE          = U.w(5)(5)
+IRQ_FLUSH_ELW   = U.w(5)(6)
+ELW_EXE         = U.w(5)(7)
+FLUSH_EX        = U.w(5)(8)
+FLUSH_WB        = U.w(5)(9)
+XRET_JUMP       = U.w(5)(10)
+DBG_TAKEN_ID    = U.w(5)(11)
+DBG_TAKEN_IF    = U.w(5)(12)
+DBG_FLUSH       = U.w(5)(13)
+DBG_WAIT_BRANCH = U.w(5)(14)
+DECODE_HWLOOP   = U.w(5)(15)
+
+# Debug FSM state encoding
+DEBUG_STATE_WIDTH = 3
+
+HAVERESET_INDEX = 0
+RUNNING_INDEX = 1
+HALTED_INDEX = 2
+
+HAVERESET = U.w(3)(1)
+RUNNING   = U.w(3)(2)
+HALTED    = U.w(3)(4)
+
+##################################################################################
+# IF Stage
+##################################################################################
+# PC mux selector defines
+PC_BOOT          = U.w(4)(0b0000)
+PC_JUMP          = U.w(4)(0b0010)
+PC_BRANCH        = U.w(4)(0b0011)
+PC_EXCEPTION     = U.w(4)(0b0100)
+PC_FENCEI        = U.w(4)(0b0001)
+PC_MRET          = U.w(4)(0b0101)
+PC_URET          = U.w(4)(0b0110)
+PC_DRET          = U.w(4)(0b0111)
+PC_HWLOOP        = U.w(4)(0b1000)
+
+# Exception PC mux selector defines
+EXC_PC_EXCEPTION = U.w(3)(0b000)
+EXC_PC_IRQ       = U.w(3)(0b001)
+
+EXC_PC_DBD       = U.w(3)(0b010)
+EXC_PC_DBE       = U.w(3)(0b011)
+
+# Trap mux selector
+TRAP_MACHINE     = U.w(2)(0b00)
+TRAP_USER        = U.w(2)(0b01)
+
+# Debug Cause
+DBG_CAUSE_NONE       = U.w(3)(0)
+DBG_CAUSE_EBREAK     = U.w(3)(1)
+DBG_CAUSE_TRIGGER    = U.w(3)(2)
+DBG_CAUSE_HALTREQ    = U.w(3)(3)
+DBG_CAUSE_STEP       = U.w(3)(4)
+DBG_CAUSE_RSTHALTREQ = U.w(3)(5)
+
+# Exception Cause
+EXC_CAUSE_INSTR_FAULT  = U.w(5)(0x01)
+EXC_CAUSE_ILLEGAL_INSN = U.w(5)(0x02)
+EXC_CAUSE_BREAKPOINT   = U.w(5)(0x03)
+EXC_CAUSE_LOAD_FAULT   = U.w(5)(0x05)
+EXC_CAUSE_STORE_FAULT  = U.w(5)(0x07)
+EXC_CAUSE_ECALL_UMODE  = U.w(5)(0x08)
+EXC_CAUSE_ECALL_MMODE  = U.w(5)(0x0B)

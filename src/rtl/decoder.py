@@ -157,6 +157,9 @@ def decoder(PULP_SECURE=0, USE_PMP=0, DEBUG_TRIGGER_EN=1):
 
             # Atomic memory access and hwloop signals are deprecated currently in our implementation
 
+            debug_mode_i=Input(Bool),
+            debug_wfi_no_sleep_i=Input(Bool),
+
             # Jump/Branches
             ctrl_transfer_insn_in_dec_o=Output(U.w(2)),     # Control transfer instruction without deassert
             ctrl_transfer_insn_in_id_o=Output(U.w(2)),      # Control transfer instruction is decoded
@@ -196,7 +199,8 @@ def decoder(PULP_SECURE=0, USE_PMP=0, DEBUG_TRIGGER_EN=1):
         io.imm_b_mux_sel_o <<= IMMB_I
 
         io.mult_operator_o <<= MUL_I
-        io.mult_int_en <<= Bool(False)
+        mult_int_en <<= Bool(False)
+        io.mult_int_en_o <<= Bool(False)
         io.mult_imm_mux_o <<= MIMM_ZERO
         io.mult_signed_mode_o <<= U.w(2)(0)
 
@@ -205,7 +209,7 @@ def decoder(PULP_SECURE=0, USE_PMP=0, DEBUG_TRIGGER_EN=1):
         io.regfile_alu_waddr_sel_o <<= Bool(True)
 
         io.csr_access_o <<= Bool(False)
-        io.csr_statues_o <<= Bool(False)
+        io.csr_status_o <<= Bool(False)
         csr_illegal <<= Bool(False)
         csr_op <<= CSR_OP_READ
         io.mret_insn_o <<= Bool(False)
@@ -327,7 +331,7 @@ def decoder(PULP_SECURE=0, USE_PMP=0, DEBUG_TRIGGER_EN=1):
         # All Load
         with elsewhen(io.instr_rdata_i[6:0] == OPCODE_LOAD):
             data_req <<= Bool(True)
-            io.regfile_mem_we <<= Bool(True)
+            io.regfile_mem_we_o <<= Bool(True)
             io.rega_used_o <<= Bool(True)
             io.data_type_o <<= U.w(2)(0b00)     # Read always read word
             # offset from immediate
@@ -406,7 +410,7 @@ def decoder(PULP_SECURE=0, USE_PMP=0, DEBUG_TRIGGER_EN=1):
                 with when(io.instr_rdata_i[31:25] == U.w(7)(0)):
                     # srli -> imm[11:5] must be 0b00
                     io.alu_operator_o <<= ALU_SRL
-                with elsewhen(io.instr_rdat_i[31:25] == U.w(7)(0b0100000)):
+                with elsewhen(io.instr_rdata_i[31:25] == U.w(7)(0b0100000)):
                     # srai -> imm[11:5] must be 0b20
                     io.alu_operator_o <<= ALU_SRA
                 with otherwise():
@@ -643,7 +647,7 @@ def decoder(PULP_SECURE=0, USE_PMP=0, DEBUG_TRIGGER_EN=1):
                               (io.instr_rdata_i[31:20] == CSR_MTVAL) |
                               (io.instr_rdata_i[31:20] == CSR_MIP)):
                     # do nothing, not illegal
-                    pass
+                    csr_illegal <<= Bool(False)
                 with elsewhen(csrs_hpm(io.instr_rdata_i[31:20])):
                     # Not illegal, but treat as status CSR to get accurate counts
                     io.csr_status_o <<= U.w(1)(1)
@@ -685,7 +689,7 @@ def decoder(PULP_SECURE=0, USE_PMP=0, DEBUG_TRIGGER_EN=1):
                     if not DEBUG_TRIGGER_EN:
                         csr_illegal <<= Bool(True)
                     else:
-                        pass
+                        csr_illegal <<= Bool(False)
 
                 with elsewhen((io.instr_rdata_i[31:20] == CSR_LPSTART0) |
                               (io.instr_rdata_i[31:20] == CSR_LPEND0) |
@@ -750,3 +754,7 @@ def decoder(PULP_SECURE=0, USE_PMP=0, DEBUG_TRIGGER_EN=1):
         io.regfile_alu_we_dec_o <<= regfile_alu_we
 
     return DECODER()
+
+
+if __name__ == '__main__':
+    Emitter.dumpVerilog(Emitter.dump(Emitter.emit(decoder()), "decoder.fir"))
