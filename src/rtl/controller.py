@@ -386,5 +386,166 @@ def controller():
                 io.csr_cause_o <<= CatBits(U.w(1)(0), EXC_CAUSE_INSTR_FAULT)
                 ctrl_fsm_ns <<= FLUSH_WB
 
+            with elsewhen(io.instr_valid_i):
+                # Valid block, now analyze the current instruction in the ID stage
+                # Decode and execute instructions only if the current conditional branch in the EX stage
+                # is either not taken, or there is no conditional branch in the EX stage
+                io.is_decoding_o <<= Bool(True)
+                illegal_insn_n <<= Bool(False)
+
+                with when((debug_req_pending | io.trigger_match_i) & (~debug_mode_q)):
+                    # Serving the debug
+                    io.halt_if_o <<= Bool(True)
+                    io.halt_id_o <<= Bool(True)
+                    ctrl_fsm_ns <<= DBG_FLUSH
+                    debug_req_entry_n <<= Bool(True)
+                with elsewhen(io.irq_req_ctrl_i & (~debug_mode_q)):
+                    # Taken IRQ
+                    io.is_decoding_o <<= Bool(False)
+                    io.halt_if_o <<= Bool(True)
+                    io.halt_id_o <<= Bool(True)
+
+                    io.pc_set_o <<= Bool(True)
+                    io.pc_mux_o <<= PC_EXCEPTION
+                    io.exc_pc_mux_o <<= EXC_PC_IRQ
+                    io.exc_cause_o <<= io.irq_id_ctrl_i
+                    io.csr_irq_sec_o <<= io.irq_sec_ctrl_i
+
+                    # IRQ interface
+                    io.irq_ack_o <<= Bool(True)
+                    io.irq_id_o <<= io.irq_id_ctrl_i
+
+                    with when(io.irq_sec_ctrl_i):
+                        io.trqp_addr_mux_o <<= TRAP_MACHINE
+                    with otherwise():
+                        io.trap_addr_mux_o <<= Mux(io.current_priv_lvl_i == PRIV_LVL_U, TRAP_USER, TRAP_MACHINE)
+
+                    io.csr_save_cause_o <<= Bool(True)
+                    io.csr_cause_o <<= CatBits(U.w(1)(1), io.irq_id_ctrl_i)
+                    io.csr_save_id_o <<= Bool(True)
+
+                with otherwise():
+                    with when(io.illegal_insn_i):
+                        io.halt_if_o <<= Bool(True)
+                        io.halt_id_o <<= Bool(True)
+                        ctrl_fsm_ns <<= Mux(io.id_ready_i, FLUSH_EX, DECODE)
+                        illegal_insn_n <<= Bool(True)
+                    with otherwise():
+                        # Decoding block
+                        with when(jump_in_dec):
+                            # Handle unconditional jumps
+                            # We can jump directly since we know the address already
+                            # We don't need to worry about conditional branches here as they
+                            # will be evaluated in the EX stage
+                            io.pc_mux_o <<= PC_JUMP
+                            # If there is a jr stall, wait for it to be gone
+                            with when((~io.jr_stall_o) & (~jump_done_q)):
+                                io.pc_set_o <<= Bool(True)
+                                jump_done <<= Bool(True)
+                        with elsewhen(io.ebrk_insn_i):
+                            io.halt_if_o <<= Bool(True)
+                            io.halt_id_o <<= Bool(False)
+
+                            with when(debug_mode_q):
+                                # We got back to the park loop in the debug ROM
+                                ctrl_fsm_ns <<= DBG_FLUSH
+                            with elsewhen(ebrk_force_debug_mode):
+                                # Debug module commands us to enter debug mode anyway
+                                ctrl_fsm_ns <<= DBG_FLUSH
+                            with otherwise():
+                                ctrl_fsm_ns <<= Mux(io.id_ready_i, FLUSH_EX, DECODE)
+                        with elsewhen(wfi_active):
+                            io.halt_if_o <<= Bool(True)
+                            io.halt_id_o <<= Bool(False)
+                            ctrl_fsm_ns <<= Mux(io.id_ready_i, FLUSH_EX, DECODE)
+                        with elsewhen(io.ecall_insn_i):
+                            io.halt_if_o <<= Bool(True)
+                            io.halt_id_o <<= Bool(False)
+                            ctrl_fsm_ns <<= Mux(io.id_ready_i, FLUSH_EX, DECODE)
+                        with elsewhen(io.fencei_insn_i):
+                            io.halt_if_o <<= Bool(True)
+                            io.halt_id_o <<= Bool(False)
+                            ctrl_fsm_ns <<= Mux(io.id_ready_i, FLUSH_EX, DECODE)
+                        with elsewhen(io.mret_insn_i | io.uret_insn_i | io.dret_insn_i):
+                            io.halt_if_o <<= Bool(True)
+                            io.halt_id_o <<= Bool(False)
+                            ctrl_fsm_ns <<= Mux(io.id_ready_i, FLUSH_EX, DECODE)
+                        with elsewhen(io.csr_status_i):
+                            io.halt_if_o <<= Bool(True)
+                            ctrl_fsm_ns <<= Mux(io.id_ready_i, FLUSH_EX, DECODE)
+                        with elsewhen(io.data_load_event_i):
+                            io.halt_if_o <<= Bool(True)
+                            ctrl_fsm_ns <<= Mux(io.id_ready_i, ELW_EXE, DECODE)
+
+                    with when(io.debug_signal_step_i & (~debug_mode_q)):
+                        # Prevent any more instructions from executing
+                        io.halt_if_o <<= Bool(True)
+
+                        # We don't handle dret here because its should be illegal
+                        # anyway in this context
+
+                        # Illegal, ecall, ebrk and xrettransition to later to a DBG
+                        # state since we need the return address which is determined later
+
+                        # Make sure the current instruction has been executed
+                        with when(io.id_ready_i):
+                            with when(io.illegal_insn_i | io.ecall_insn_i):
+                                ctrl_fsm_ns <<= FLUSH_EX
+                            with elsewhen((~ebrk_force_debug_mode) & io.ebrk_insn_i):
+                                ctrl_fsm_ns <<= FLUSH_EX
+                            with elsewhen(io.mret_insn_i | io.uret_insn_i):
+                                ctrl_fsm_ns <<= FLUSH_EX
+                            with elsewhen(branch_in_id):
+                                ctrl_fsm_ns <<= DBG_WAIT_BRANCH
+                            with otherwise():
+                                ctrl_fsm_ns <<= DBG_FLUSH
+
+            with otherwise():
+                io.is_decoding_o <<= Bool(False)
+                io.perf_pipeline_stall_o <<= io.data_load_event_i
+
+        # Flush the pipeline, insert NOP into EX stage
+        with elsewhen(ctrl_fsm_cs == FLUSH_EX):
+            io.is_decoding_o <<= Bool(False)
+
+            io.halt_if_o <<= Bool(True)
+            io.halt_id_o <<= Bool(True)
+
+            with when(io.data_err_i):
+                # Data error
+                # The current LW or SW have been blocked by PMP
+                io.csr_save_ex_o <<= Bool(True)
+                io.csr_save_cause_o <<= Bool(True)
+                io.data_err_ack_o <<= Bool(True)
+                # No jump in this stage as we have to wait one cycle to go to machine mode
+                io.csr_cause_o <<= CatBits(U.w(1)(0), Mux(io.data_we_ex_i, EXC_CAUSE_STORE_FAULT, EXC_CAUSE_LOAD_FAULT))
+                ctrl_fsm_ns <<= FLUSH_WB
+                # Putting illegal to 0 as if it was 1, the core is going to jump to the exception of the EX stage,
+                # So the illegal was never executed
+                illegal_insn_n <<= Bool(False)
+            with elsewhen(io.ex_valid_i):
+                # Check done to prevent data hazard in the CSR registers
+                ctrl_fsm_ns <<= FLUSH_WB
+
+                with when(illegal_insn_q):
+                    io.csr_save_id_o <<= Bool(True)
+                    io.csr_save_cause_o <<= ~debug_mode_q
+                    io.csr_cause_o <<= CatBits(U.w(1)(0), EXC_CAUSE_ILLEGAL_INSN)
+                with otherwise():
+                    with when(io.ebrk_insn_i):
+                        io.csr_save_id_o <<= Bool(True)
+                        io.csr_save_cause_o <<= Bool(True)
+                        io.csr_cause_o <<= CatBits(U.w(1)(0), EXC_CAUSE_BREAKPOINT)
+                    with elsewhen(io.ecall_insn_i):
+                        io.csr_save_id_o <<= Bool(True)
+                        io.csr_save_cause_o <<= ~debug_mode_q
+                        io.csr_cause_o <<= CatBits(U.w(1)(0), Mux(io.current_priv_lvl_i == PRIV_LVL_U,
+                                                                  EXC_CAUSE_ECALL_UMODE, EXC_CAUSE_ECALL_MMODE))
+
+        with elsewhen(ctrl_fsm_cs == FLUSH_WB):
+            # Flush the pipeline, insert NOP into EX and WB stage
+            io.is_decoding_o <<= Bool(False)
+
+            
 
     return CONTROLLER()
