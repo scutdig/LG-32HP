@@ -501,6 +501,13 @@ CSR_MARCHID        = U.w(12)(0xF12)
 CSR_MIMPID         = U.w(12)(0xF13)
 CSR_MHARTID        = U.w(12)(0xF14)
 
+# CSR interrupt pending/enable bits
+CSR_MSIX_BIT      = 3
+CSR_MTIX_BIT      = 7
+CSR_MEIX_BIT      = 11
+CSR_MFIX_BIT_LOW  = 16
+CSR_MFIX_BIT_HIGH = 31
+
 # Controller FSM state encoding
 CTRL_STATE_WIDTH = 5
 
@@ -573,3 +580,6 @@ EXC_CAUSE_LOAD_FAULT   = U.w(5)(0x05)
 EXC_CAUSE_STORE_FAULT  = U.w(5)(0x07)
 EXC_CAUSE_ECALL_UMODE  = U.w(5)(0x08)
 EXC_CAUSE_ECALL_MMODE  = U.w(5)(0x0B)
+
+# Interrupt mask
+IRQ_MASK = U.w(32)(0xFFFF0888)
