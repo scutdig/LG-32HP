@@ -712,7 +712,7 @@ def controller():
                 ctrl_fsm_ns <<= FLUSH_WB
             with otherwise():
                 with when(debug_mode_q | io.trigger_match_i | (ebrk_force_debug_mode & io.ebrk_insn_i) |
-                          io.data_load_event_i | debug_req_entry_q)
+                          io.data_load_event_i | debug_req_entry_q):
                     ctrl_fsm_ns <<= DBG_TAKEN_ID
                 with otherwise():
                     ctrl_fsm_ns <<= DBG_TAKEN_IF
