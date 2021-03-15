@@ -27,7 +27,7 @@ def int_controller(PULP_SECURE=0):
         io = IO(
             # External interrupt lines
             irq_i=Input(U.w(32)),           # Level-triggered interrupt inputs
-            itq_sec_i=Input(Bool),          # Interrupt secure bit from EU
+            irq_sec_i=Input(Bool),          # Interrupt secure bit from EU
 
             # To controller
             irq_req_ctrl_o=Output(Bool),
@@ -120,11 +120,11 @@ def int_controller(PULP_SECURE=0):
         with elsewhen(irq_local_qual[12]):
             io.irq_id_ctrl_o <<= U.w(5)(12)
         with elsewhen(irq_local_qual[CSR_MEIX_BIT]):
-            io.irq_id_ctrl_o <<= U.w(CSR_MEIX_BIT)
+            io.irq_id_ctrl_o <<= U(CSR_MEIX_BIT)
         with elsewhen(irq_local_qual[CSR_MSIX_BIT]):
-            io.irq_id_ctrl_o <<= U.w(CSR_MSIX_BIT)
+            io.irq_id_ctrl_o <<= U(CSR_MSIX_BIT)
         with elsewhen(irq_local_qual[CSR_MTIX_BIT]):
-            io.irq_id_ctrl_o <<= U.w(CSR_MTIX_BIT)
+            io.irq_id_ctrl_o <<= U(CSR_MTIX_BIT)
         with elsewhen(irq_local_qual[10]):
             io.irq_id_ctrl_o <<= U.w(5)(10)
         with elsewhen(irq_local_qual[2]):
@@ -144,8 +144,13 @@ def int_controller(PULP_SECURE=0):
         with elsewhen(irq_local_qual[4]):
             io.irq_id_ctrl_o <<= U.w(5)(4)
         with otherwise():
-            io.irq_id_ctrl_o <<= CSR_MTIX_BIT
+            io.irq_id_ctrl_o <<= U(CSR_MTIX_BIT)
 
         io.irq_sec_ctrl_o <<= irq_sec_q
 
     return INT_CONTROLLER()
+
+
+if __name__ == '__main__':
+    # TODO: Seems like here exist combinational loop here
+    Emitter.dumpVerilog_nock(Emitter.dump(Emitter.emit(int_controller()), "int_controller.fir"))

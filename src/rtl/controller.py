@@ -103,7 +103,7 @@ def controller():
             debug_cause_o=Output(U.w(2)),
             debug_csr_save_o=Output(Bool),
             debug_req_i=Input(Bool),
-            debug_singal_step_i=Input(Bool),
+            debug_single_step_i=Input(Bool),
             debug_ebreakm_i=Input(Bool),
             debug_ebreaku_i=Input(Bool),
             trigger_match_i=Input(Bool),
@@ -190,7 +190,7 @@ def controller():
         data_err_q = RegInit(Bool(False))
 
         debug_mode_q = RegInit(Bool(False))
-        debug_mode_n = Wire(Bool(False))
+        debug_mode_n = Wire(Bool)
 
         ebrk_force_debug_mode = Wire(Bool)
         illegal_insn_q = RegInit(Bool(False))
@@ -274,7 +274,7 @@ def controller():
         # FSM
         with when(ctrl_fsm_cs == RESET):
             # We were just reset, wait for fetch_enable
-            io.decoding_o <<= Bool(False)
+            io.is_decoding_o <<= Bool(False)
             io.instr_req_o <<= Bool(False)
             with when(io.fetch_enable_i):
                 ctrl_fsm_ns <<= BOOT_SET
@@ -416,7 +416,7 @@ def controller():
                     io.irq_id_o <<= io.irq_id_ctrl_i
 
                     with when(io.irq_sec_ctrl_i):
-                        io.trqp_addr_mux_o <<= TRAP_MACHINE
+                        io.trap_addr_mux_o <<= TRAP_MACHINE
                     with otherwise():
                         io.trap_addr_mux_o <<= Mux(io.current_priv_lvl_i == PRIV_LVL_U, TRAP_USER, TRAP_MACHINE)
 
@@ -477,7 +477,7 @@ def controller():
                             io.halt_if_o <<= Bool(True)
                             ctrl_fsm_ns <<= Mux(io.id_ready_i, ELW_EXE, DECODE)
 
-                    with when(io.debug_signal_step_i & (~debug_mode_q)):
+                    with when(io.debug_single_step_i & (~debug_mode_q)):
                         # Prevent any more instructions from executing
                         io.halt_if_o <<= Bool(True)
 
@@ -573,7 +573,7 @@ def controller():
                     io.trap_addr_mux_o <<= TRAP_MACHINE
                     io.exc_pc_mux_o <<= Mux(debug_mode_q, EXC_PC_DBE, EXC_PC_EXCEPTION)
                     illegal_insn_n <<= Bool(True)
-                    with when(io.debug_singal_step_i & (~debug_mode_q)):
+                    with when(io.debug_single_step_i & (~debug_mode_q)):
                         ctrl_fsm_ns <<= DBG_TAKEN_IF
                 with otherwise():
                     with when(io.ebrk_insn_i):
@@ -583,7 +583,7 @@ def controller():
                         io.trap_addr_mux_o <<= TRAP_MACHINE
                         io.exc_pc_mux_o <<= EXC_PC_EXCEPTION
 
-                        with when(io.debug_singal_step_i & (~debug_mode_q)):
+                        with when(io.debug_single_step_i & (~debug_mode_q)):
                             ctrl_fsm_ns <<= DBG_TAKEN_IF
                     with elsewhen(io.ecall_insn_i):
                         # ecall
@@ -592,7 +592,7 @@ def controller():
                         io.trap_addr_mux_o <<= TRAP_MACHINE
                         io.exc_pc_mux_o <<= Mux(debug_mode_q, EXC_PC_DBE, EXC_PC_EXCEPTION)
 
-                        with when(io.debug_singal_step_i & (~debug_mode_q)):
+                        with when(io.debug_single_step_i & (~debug_mode_q)):
                             ctrl_fsm_ns <<= DBG_TAKEN_IF
                     with elsewhen(io.mret_insn_i):
                         io.csr_restore_mret_id_o <<= ~debug_mode_q
@@ -630,7 +630,7 @@ def controller():
                 io.pc_set_o <<= Bool(True)
                 debug_mode_n <<= Bool(False)
 
-            with when(io.debug_singal_step_i & (~debug_mode_q)):
+            with when(io.debug_single_step_i & (~debug_mode_q)):
                 ctrl_fsm_ns <<= DBG_TAKEN_IF
 
         # A branch was in ID when trying to go to debug rom. Wait until we can
@@ -659,7 +659,7 @@ def controller():
             io.is_decoding_o <<= Bool(False)
             io.pc_set_o <<= Bool(True)
             io.pc_mux_o <<= PC_EXCEPTION
-            io.exc_oc_mux_o <<= EXC_PC_DBD
+            io.exc_pc_mux_o <<= EXC_PC_DBD
             # If not in debug mode then save cause and dpc csrs
             # else it was an ebreak in debug mode, so don't update csrs
             with when(~debug_mode_q):
@@ -688,7 +688,7 @@ def controller():
             io.debug_csr_save_o <<= Bool(True)
             with when(debug_force_wakeup_q):
                 io.debug_cause_o <<= DBG_CAUSE_HALTREQ
-            with elsewhen(io.debug_singal_step_i):
+            with elsewhen(io.debug_single_step_i):
                 io.debug_cause_o <<= DBG_CAUSE_STEP
             io.csr_save_if_o <<= Bool(True)
             ctrl_fsm_ns <<= DECODE
@@ -741,7 +741,7 @@ def controller():
                 (((io.data_req_ex_i == Bool(True) & (io.regfile_we_ex_i == Bool(True))) |
                  ((io.wb_ready_i == Bool(False)) & (io.regfile_we_wb_i == Bool(True)))) &
                  ((io.reg_d_ex_is_reg_a_i == Bool(True)) | (io.reg_d_ex_is_reg_b_i == Bool(True)) |
-                  (io.reg_d_ex_is_reg_C_i == Bool(True)) | (io.is_decoding_o & (io.regfile_we_id_i &
+                  (io.reg_d_ex_is_reg_c_i == Bool(True)) | (io.is_decoding_o & (io.regfile_we_id_i &
                                                            (~io.data_misaligned_i)) &
                                                            (io.regfile_waddr_ex_i == io.regfile_alu_waddr_id_i))))
         ):
@@ -755,7 +755,7 @@ def controller():
         with when((io.ctrl_transfer_insn_in_dec_i == BRANCH_JALR) &
                   (((io.regfile_we_wb_i == Bool(True)) & (io.reg_d_wb_is_reg_a_i == Bool(True))) |
                    ((io.regfile_we_ex_i == Bool(True)) & (io.reg_d_ex_is_reg_a_i == Bool(True))) |
-                   ((io.regfile_alu_we_fw_i == Bool(True)) & (io.reg_d_alu_si_reg_a_i == Bool(True))))):
+                   ((io.regfile_alu_we_fw_i == Bool(True)) & (io.reg_d_alu_is_reg_a_i == Bool(True))))):
             io.jr_stall_o <<= Bool(True)
             io.deassert_we_o <<= Bool(True)
         with otherwise():
@@ -861,3 +861,7 @@ def controller():
         io.debug_halted_o <<= debug_fsm_cs[HALTED_INDEX]
 
     return CONTROLLER()
+
+
+if __name__ == '__main__':
+    Emitter.dumpVerilog(Emitter.dump(Emitter.emit(controller()), "controller.fir"))
