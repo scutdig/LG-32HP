@@ -20,6 +20,10 @@ Copyright Digisim, Computer Architecture team of South China University of Techn
 """
 from pyhcl import *
 from src.include.pkg import *
+from src.rtl.register_file_ff import *
+from src.rtl.decoder import *
+from src.rtl.controller import *
+from src.rtl.int_controller import *
 
 
 def sign_extension(sign, width):
@@ -303,7 +307,7 @@ def id_stage(PULP_SECURE=0, USE_PMP=0, DEBUG_TRIGGER_EN=1):
         mult_operator = Wire(U.w(MUL_OP_WIDTH))         # Multiplication operation selection
         mult_en = Wire(Bool)                            # Multiplication is used instead of ALU
         mult_int_en = Wire(Bool)                        # Use integer multiplier
-        mult_sel_subwored = Wire(Bool)                  # Select a subword when doing multiplications
+        # mult_sel_subword = Wire(Bool)                  # Select a subword when doing multiplications
         mult_signed_mode = Wire(U.w(2))                 # Signed mode multiplication at the output of the controller,
                                                         # and before the pipe registers
 
@@ -531,6 +535,324 @@ def id_stage(PULP_SECURE=0, USE_PMP=0, DEBUG_TRIGGER_EN=1):
         })
 
         # Immediates ID
+        bmask_a_id_imm <<= LookUpTable(bmask_a_mux, {
+            BMASK_A_ZERO: U(0),
+            BMASK_A_S3: imm_s3_type[4:0],
+            ...: U(0)
+        })
 
+        bmask_b_id_imm <<= LookUpTable(bmask_b_mux, {
+            BMASK_B_ZERO: U(0),
+            BMASK_B_ONE: U.w(5)(1),
+            BMASK_B_S2: imm_s2_type[4:0],
+            BMASK_B_S3: imm_s3_type[4:0],
+            ...: U(0)
+        })
+
+        bmask_a_id <<= LookUpTable(alu_bmask_a_mux_sel, {
+            BMASK_A_IMM: bmask_a_id_imm,
+            BMASK_A_REG: operand_b_fw_id[9:5],
+            ...: bmask_a_id_imm
+        })
+
+        bmask_b_id <<= LookUpTable(alu_bmask_b_mux_sel, {
+            BMASK_B_IMM: bmask_b_id_imm,
+            BMASK_B_REG: operand_b_fw_id[4:0],
+            ...: bmask_b_id_imm
+        })
+
+        imm_vec_ext_id <<= imm_vu_type[1:0]
+
+        mult_imm_id <<= LookUpTable(mult_imm_mux, {
+            MIMM_ZERO: U(0),
+            MIMM_S3: imm_s3_type[4:0],
+            ...: U(0)
+        })
+
+        # Deprecated APU
+
+        # Initial modules
+        rf = register_file(ADDR_WIDTH=6, DATA_WIDTH=32)
+        de = decoder(PULP_SECURE=PULP_SECURE, USE_PMP=USE_PMP, DEBUG_TRIGGER_EN=DEBUG_TRIGGER_EN)
+        co = controller()
+        int_co = int_controller()
+
+        ##################################################################################
+        # Registers
+        ##################################################################################
+        rf.io.scan_cg_en_i <<= io.scan_cg_en_i
+
+        # Read port a
+        rf.io.raddr_a_i <<= regfile_addr_ra_id
+        regfile_data_ra_id <<= rf.io.rdata_a_o
+
+        # Read port b
+        rf.io.raddr_b_i <<= regfile_addr_rb_id
+        regfile_data_rb_id <<= rf.io.rdata_b_o
+
+        # Read port c
+        rf.io.raddr_c_i <<= regfile_addr_rc_id
+        regfile_data_rc_id <<= rf.io.rdata_c_o
+
+        # Write port a
+        rf.io.waddr_a_i <<= io.regfile_waddr_wb_i
+        rf.io.wdata_a_i <<= io.regfile_wdata_wb_i
+        rf.io.we_a_i <<= io.regfile_we_wb_i
+
+        # Write port b
+        rf.io.waddr_b_i <<= io.regfile_alu_waddr_fw_i
+        rf.io.wdata_b_i <<= io.regfile_alu_wdata_fw_i
+        rf.io.we_b_i <<= io.regfile_alu_we_fw_i
+
+        ##################################################################################
+        # Decoder
+        ##################################################################################
+        # Ref io port
+        de_io = de.io
+
+        # Controller related signals
+        de_io.deassert_we_i <<= deassert_we
+
+        illegal_insn_dec <<= de_io.illegal_insn_o
+        ebrk_insn_dec <<= de_io.ebrk_insn_o
+
+        mret_insn_dec <<= de_io.mret_insn_o
+        uret_insn_dec <<= de_io.uret_insn_o
+        dret_insn_dec <<= de_io.dret_insn_o
+
+        ecall_insn_dec <<= de_io.call_insn_o
+        wfi_insn_dec <<= de_io.wfi_o
+
+        fencei_insn_dec <<= de_io.fencei_insn_o
+
+        rega_used_dec <<= de_io.rega_used_o
+        regb_used_dec <<= de_io.regb_used_o
+        regc_used_dec <<= de_io.regc_used_o
+
+        # TODO: Temporary set zero
+        bmask_a_mux <<= BMASK_A_ZERO
+        bmask_b_mux <<= BMASK_B_ZERO
+        alu_bmask_a_mux_sel <<= BMASK_A_REG
+        alu_bmask_b_mux_sel <<= BMASK_B_REG
+
+        # From IF/ID pipeline
+        de_io.instr_rdata_i <<= instr
+        de_io.illegal_c_insn_i <<= io.illegal_c_insn_i
+
+        # ALU signals
+        alu_en <<= de_io.alu_en_o
+        alu_operator <<= de_io.alu_operator_o
+        alu_op_a_mux_sel <<= de_io.alu_op_a_mux_sel_o
+        alu_op_b_mux_sel <<= de_io.alu_op_b_mux_sel_o
+        alu_op_c_mux_sel <<= de_io.alu_op_c_mux_sel_o
+        imm_a_mux_sel <<= de_io.imm_a_mux_sel_o
+        imm_b_mux_sel <<= de_io.imm_b_mux_sel_o
+        regc_mux <<= de_io.regc_mux_o
+
+        mult_operator <<= de_io.mult_operator_o
+        mult_int_en <<= de_io.mult_int_en_o
+        # mult_sel_subword <<= de_io.mult_sel_subword_o
+        mult_signed_mode <<= de_io.mult_signed_mode_o
+        mult_imm_mux <<= de_io.mult_imm_mux_o
+
+        # Deprecated FPU / APU signals
+
+        # Register file control signals
+        regfile_we_id <<= de_io.regfile_mem_we_o
+        regfile_alu_we_id <<= de_io.regfile_alu_we_o
+        regfile_alu_we_dec_id <<= de_io.regfile_alu_we_dec_o
+        regfile_alu_waddr_mux_sel <<= de_io.regfile_alu_waddr_sel_o
+
+        # CSR control signals
+        csr_access <<= de_io.csr_access_o
+        csr_status <<= de_io.csr_status_o
+        csr_op <<= de_io.csr_op_o
+        de_io.current_priv_lvl_i <<= io.current_priv_lvl_i
+
+        # Data bus interface
+        data_req_id <<= de_io.data_req_o
+        data_we_id <<= de_io.data_we_o
+        prepost_useincr <<= de_io.prepost_useincr_o
+        data_type_id <<= de_io.data_type_o
+        data_sign_ext_id <<= de_io.data_sign_extension_o
+        data_reg_offset_id <<= de_io.data_reg_offset_o
+
+        # Debug mode
+        de_io.debug_mode_i <<= io.debug_mode_o
+        de_io.debug_wfi_no_sleep_i <<= debug_wfi_no_sleep
+
+        # Jump/Branches
+        ctrl_transfer_insn_in_dec <<= de_io.ctrl_transfer_insn_in_dec_o
+        ctrl_transfer_insn_in_id <<= de_io.ctrl_transfer_insn_in_id_o
+        ctrl_transfer_target_mux_sel <<= de_io.ctrl_transfer_target_mux_sel_o
+
+        # HPM related control signals
+        de_io.mcounteren_i <<= io.mcounteren_i
+
+        ##################################################################################
+        # Controller
+        ##################################################################################
+        # TODO: Gated clock
+        co_io = co.io
+
+        co_io.fetech_enable_i <<= io.fetch_enable_i
+        io.ctrl_busy_o <<= co_io.ctrl_busy_o
+        io.is_decoding_o <<= co_io.is_decoding_o
+        co_io.is_fetch_failed_o <<= io.is_fetch_failed_i
+
+        # Decoder related signals
+        deassert_we <<= co_io.deassert_we_o
+        co_io.illegal_insn_i <<= illegal_insn_dec
+        co_io.ecall_insn_i <<= ecall_insn_dec
+        co_io.mret_insn_i <<= mret_insn_dec
+        co_io.uret_insn_i <<= uret_insn_dec
+
+        co_io.dret_insn_i <<= dret_insn_dec
+
+        co_io.mret_dec_i <<= mret_dec
+        co_io.uret_dec_i <<= uret_dec
+        co_io.dret_dec_i <<= dret_dec
+
+        co_io.wfi_i <<= wfi_insn_dec
+        co_io.ebrk_insn_i <<= ebrk_insn_dec
+        co_io.fencei_insn_i <<= fencei_insn_dec
+        co_io.csr_status_i <<= csr_status
+
+        # From IF/ID pipeline
+        co_io.instr_valid_i <<= io.instr_valid_i
+
+        # From prefetcher
+        io.instr_req_o <<= co_io.instr_req_o
+
+        # To prefetcher
+        io.pc_set_o <<= co_io.pc_set_o
+        io.pc_mux_o <<= co_io.pc_mux_o
+        io.exc_pc_mux_o <<= co_io.exc_pc_mux_o
+        io.exc_cause_o <<= co_io.exc_cuase_o
+        io.trap_addr_mux_o <<= co_io.trap_addr_mux_o
+
+        # LSU
+        co_io.data_req_ex_i <<= io.data_req_ex_o
+        co_io.data_we_ex_i <<= io.data_we_ex_o
+        co_io.data_misaligned_i <<= io.data_misaligned_i
+        co_io.data_load_event_i <<= data_load_event_id
+        co_io.data_err_i <<= io.data_err_i
+        io.data_err_ack_o <<= co_io.data_err_ack_o
+
+        # ALU
+        co_io.mult_multicycle_i <<= io.mult_multicycle_i
+
+        # Jump/Branch control
+        co_io.branch_taken_ex_i <<= branch_taken_ex
+        co_io.ctrl_transfer_insn_in_id_i <<= ctrl_transfer_insn_in_id
+        co_io.ctrl_transfer_insn_in_dec_i <<= ctrl_transfer_insn_in_dec
+
+        # Interrupt signals
+        co_io.irq_wu_ctrl_i <<= irq_wu_ctrl
+        co_io.irq_req_ctrl_i <<= irq_req_ctrl
+        co_io.irq_sec_ctrl_i <<= irq_sec_ctrl
+        co_io.irq_id_ctrl_i <<= irq_id_ctrl
+        co_io.current_priv_lvl_i <<= io.current_priv_lvl_i
+        io.irq_ack_o <<= co_io.irq_ack_o
+        io.irq_id_o <<= co_io.irq_id_o
+
+        # Debug signals
+        io.debug_mode_o <<= co_io.debug_mode_o
+        io.debug_cause_o <<= co_io.debug_cause_o
+        io.debug_csr_save_o <<= co_io.debug_csr_save_o
+        co_io.debug_req_i <<= io.debug_req_i
+        co_io.debug_single_step_i <<= io.debug_single_step_i
+        co_io.debug_ebreakm_i <<= io.debug_ebreakm_i
+        co_io.debug_ebreaku_i <<= io.debug_ebreaku_i
+        co_io.trigger_match_i <<= io.trigger_match_i
+        io.debug_p_elw_no_sleep_o <<= co_io.debug_p_elw_no_sleep_o
+        debug_wfi_no_sleep <<= co_io.debug_wfi_no_sleep_o
+        io.debug_havereset_o <<= co_io.debug_havereset_o
+        io.debug_running_o <<= co_io.debug_running_o
+        io.debug_halted_o <<= co_io.debug_halted_o
+
+        # Wakeup signal
+        io.wake_from_sleep_o <<= co_io.wake_from_sleep_o
+
+        # CSR controller signals
+        io.csr_save_cause_o <<= co_io.csr_save_cause_o
+        io.csr_cause_o <<= co_io.csr_cause_o
+        io.csr_save_if_o <<= co_io.csr_save_if_o
+        io.csr_save_id_o <<= co_io.csr_save_id_o
+        io.csr_save_ex_o <<= co_io.csr_save_ex_o
+        io.csr_restore_mret_id_o <<= co_io.csr_restore_mret_id_o
+        io.csr_restore_uret_id_o <<= co_io.csr_restore_uret_id_o
+
+        io.csr_restore_dret_id_o <<= co_io.csr_restore_dret_id_o
+
+        io.csr_irq_sec_o <<= co_io.csr_irq_sec_o
+
+        # Write targets from ID
+        co_io.regfile_we_id_i <<= regfile_alu_we_id
+        co_io.regfile_alu_waddr_id_i <<= regfile_alu_waddr_id
+
+        # Forwarding signals from regfile
+        co_io.regfile_we_ex_i <<= io.regfile_we_ex_o
+        co_io.regfile_waddr_ex_i <<= io.regfile_waddr_ex_o
+        co_io.regfile_we_wb_i <<= io.regfile_we_wb_i
+
+        # Regfile port 2
+        co_io.regfile_alu_we_fw_i <<= io.regfile_alu_we_fw_i
+
+        # Forwarding detection signals
+        co_io.reg_d_ex_is_reg_a_i <<= reg_d_ex_is_reg_a_id
+        co_io.reg_d_ex_is_reg_b_i <<= reg_d_ex_is_reg_b_id
+        co_io.reg_d_ex_is_reg_c_i <<= reg_d_ex_is_reg_c_id
+        co_io.reg_d_wb_is_reg_a_i <<= reg_d_wb_is_reg_a_id
+        co_io.reg_d_wb_is_reg_b_i <<= reg_d_wb_is_reg_b_id
+        co_io.reg_d_wb_is_reg_c_i <<= reg_d_wb_is_reg_c_id
+        co_io.reg_d_alu_is_reg_a_i <<= reg_d_alu_is_reg_a_id
+        co_io.reg_d_alu_is_reg_b_i <<= reg_d_alu_is_reg_b_id
+        co_io.reg_d_alu_is_reg_c_i <<= reg_d_alu_is_reg_c_id
+
+        # Forwarding signals
+        operand_a_fw_mux_sel <<= co_io.operand_a_fw_mux_sel_o
+        operand_b_fw_mux_sel <<= co_io.operand_b_fw_mux_sel_o
+        operand_c_fw_mux_sel <<= co_io.operand_c_fw_mux_sel_o
+
+        # Stall signals
+        halt_if <<= co_io.halt_if_o
+        halt_id <<= co_io.halt_id_o
+
+        misaligned_stall <<= co_io.misaligned_stall_o
+        jr_stall <<= co_io.jr_stall_o
+        load_stall <<= co_io.load_stall_o
+
+        co_io.id_ready_i <<= io.id_ready_o
+        co_io.id_valid_i <<= io.id_valid_o
+
+        co_io.ex_valid_i <<= io.ex_valid_i
+        co_io.wb_ready_i <<= io.wb_ready_i
+
+        perf_pipeline_stall <<= co_io.perf_pipeline_stall_o
+
+        ##################################################################################
+        # Interrupt Controller
+        ##################################################################################
+        # External interrupt lines
+        int_co.io.irq_i <<= io.irq_i
+        int_co.io.irq_sec_i <<= io.irq_sec_i
+
+        # To controller
+        irq_req_ctrl <<= int_co.io.irq_req_ctrl_o
+        irq_sec_ctrl <<= int_co.io.irq_sec_ctrl_o
+        irq_id_ctrl <<= int_co.io.irq_id_ctrl_o
+        irq_wu_ctrl <<= int_co.io.irq_wu_ctrl_o
+
+        # To/from registers
+        int_co.io.mie_bypass_i <<= io.mie_bypass_i
+        io.mip_o <<= int_co.io.mip_o
+        int_co.io.m_ie_i <<= io.m_irq_enable_i
+        int_co.io.u_ie_i <<= io.u_irq_enable_i
+        int_co.io.current_priv_lvl_i <<= io.current_priv_lvl_i
+
+        ##################################################################################
+        # ID/EX pipeline
+        ##################################################################################
 
     return ID_STAGE()

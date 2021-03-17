@@ -583,3 +583,20 @@ EXC_CAUSE_ECALL_MMODE  = U.w(5)(0x0B)
 
 # Interrupt mask
 IRQ_MASK = U.w(32)(0xFFFF0888)
+
+##################################################################################
+# ID Stage
+##################################################################################
+# bit mask selection
+BMASK_A_ZERO = U.w(1)(0b0)
+BMASK_A_S3   = U.w(1)(0b1)
+
+BMASK_B_S2   = U.w(2)(0b00)
+BMASK_B_S3   = U.w(2)(0b01)
+BMASK_B_ZERO = U.w(2)(0b10)
+BMASK_B_ONE  = U.w(2)(0b11)
+
+BMASK_A_REG  = U.w(1)(0b0)
+BMASK_A_IMM  = U.w(1)(0b1)
+BMASK_B_REG  = U.w(1)(0b0)
+BMASK_B_IMM  = U.w(1)(0b1)
