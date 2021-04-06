@@ -68,6 +68,7 @@ def alu():
 
         div_shift = Wire(U.w(6))
         div_valid = Wire(Bool)
+        bmask = Wire(U.w(32))
 
         ##################################################################################
         # Partitioned Adder
@@ -100,6 +101,108 @@ def alu():
         adder_result <<= CatBits(adder_result_expanded[35:28], adder_result_expanded[26:19],
                                  adder_result_expanded[17:10], adder_result_expanded[8:1])
 
-        # Normalization stage deprecated
+        # Normalization stage
+        adder_round_value = Wire(U.w(32))
+        adder_round_result = Wire(U.w(32))
+
+        adder_round_value <<= Mux(((io.operator_i == ALU_ADDR) | (io.operator_i == ALU_SUBR) |
+                                  (io.operator_i == ALU_ADDUR) | (io.operator_i == ALU_SUBUR)),
+                                  CatBits(U.w(1)(0), bmask[31:1]), U(0))
+        adder_round_result <<= adder_result + adder_round_value
+
+        ##################################################################################
+        # Shift
+        ##################################################################################
+
+        shift_left = Wire(Bool)
+        shift_use_round = Wire(Bool)
+        shift_arithmetic = Wire(Bool)
+
+        shift_amt_left = Wire(U.w(32))          # Amount of shift, if to the left
+        shift_amt = Wire(U.w(32))               # Amount of shift, to the right
+        shift_amt_int = Wire(U.w(32))           # Amount of shift, used for the actual shifters
+        shift_amt_norm = Wire(U.w(32))          # Amount of shift, used for normalization
+        shift_op_a = Wire(U.w(32))              # Input of the shifter
+        shift_result = Wire(U.w(32))
+        shift_right_result = Wire(U.w(32))
+        shift_left_result = Wire(U.w(32))
+        clpx_shift_ex = Wire(U.w(16))
+
+        # Shifter is also used for preparing operand for division
+        shift_amt <<= Mux(div_valid, div_shift, io.operand_b_i)
+
+        shift_amt_left <<= shift_amt
+
+        # ALU_FL1 and ALU_CLB are used for the bit counting ops later
+        shift_left <<= (io.operator_i == ALU_SLL) | (io.operator_i == ALU_BINS) | \
+                       (io.operator_i == ALU_FL1) | (io.operator_i == ALU_CLB)  | \
+                       (io.operator_i == ALU_DIV) | (io.operator_i == ALU_DIVU) | \
+                       (io.operator_i == ALU_REM) | (io.operator_i == ALU_REMU) | \
+                       (io.operator_i == ALU_BREV)
+
+        shift_use_round <<= (io.operator_i == ALU_ADD)  | (io.operator_i == ALU_SUB)  | \
+                            (io.operator_i == ALU_ADDR)  | (io.operator_i == ALU_SUBR)  | \
+                            (io.operator_i == ALU_ADDU)  | (io.operator_i == ALU_SUBU)  | \
+                            (io.operator_i == ALU_ADDUR) | (io.operator_i == ALU_SUBUR)
+
+        shift_arithmetic <<= (io.operator_i == ALU_SRA)  | (io.operator_i == ALU_BEXT) | \
+                             (io.operator_i == ALU_ADD)  | (io.operator_i == ALU_SUB)  | \
+                             (io.operator_i == ALU_ADDR) | (io.operator_i == ALU_SUBR)
+
+        # Choose the bit reversed or the normal input for shift operand a
+        shift_op_a <<= Mux(shift_left, operand_a_rev, Mux(shift_use_round, adder_round_result, io.operand_a_i))
+        # In our implement, we never round the result
+        shift_amt_int <<= shift_amt
+
+        # Right shifts
+        shift_op_a_32 = Wire(U.w(64))
+        shift_op_tmp = Wire(U.w(64))
+        ari_lst = []                # Arithmetic shift list
+        for i in range(32):
+            ari_lst.append(shift_op_a[31])
+        not_ror = Mux(shift_arithmetic, CatBits(ari_lst, shift_op_a), CatBits(U.w(32)(0), shift_op_a))
+        shift_op_a_32 <<= Mux(io.operator_i == ALU_ROR, CatBits(shift_op_a, shift_op_a), not_ror.to_sint())
+
+        shift_right_result <<= shift_op_a_32 >> shift_amt_int[4:0]
+
+        # Bit reverse the shift_right_result for left shifts
+        reverse_lst = [Wire(Bool) for _ in range(32)]
+        for j in range(32):
+            reverse_lst[j] <<= shift_right_result[31-j]
+        shift_left_result <<= CatBits(reverse_lst)
+
+        shift_result <<= Mux(shift_left, shift_left_result, shift_right_result)
+
+        ##################################################################################
+        # Comparison
+        ##################################################################################
+
+        is_equal = Wire(U.w(4))
+        is_greater = Wire(U.w(4))   # Handles both signed and unsigned forms
+
+        # 8-bit vector comparisons, basic building blocks
+        cmp_signed = Wire(U.w(4))
+        is_equal_vec = Wire(Vec(4, Bool))
+        is_greater_vec = Wire(Vec(4, Bool))
+        operand_b_eq = Wire(U.w(32))
+        # is_equal_clip = Wire(Bool)
+
+        # second == comparator for CLIP instructions
+        # We dont need that support
+        operand_b_eq <<= operand_b_neg
+
+        cmp_signed <<= U(0)
+        # Some ALU operations that we dont support
+        with when((io.operator_i == ALU_GTS) | (io.operator_i == ALU_GES) | (io.operator_i == ALU_LTS) |
+                  (io.operator_i == ALU_LES) | (io.operator_i == ALU_SLTS) | (io.operator_i == ALU_SLETS) |
+                  (io.operator_i == ALU_MIN) | (io.operator_i == ALU_MAX) | (io.operator_i == ALU_ABS) |
+                  (io.operator_i == ALU_CLIP) | (io.operator_i == ALU_CLIPU)):
+            cmp_signed <<= U.w(4)(0b1000)
+
+        for i in range(4):
+            is_equal_vec[i] <<= io.operand_a_i[8*i+7:8*i] == io.operand_b_i[8*i+7:8*i]
+            is_greater_vec[i] = CatBits(io.operand_a_o[8*i+7] & cmp_signed[i], io.operand_a_i[8*i+7:8*i]).to_sint() > \
+                                CatBits(io.operand_b_o[8*i+7] & cmp_signed[i], io.operand_b_i[8*i+7:8*i]).to_sint()
+
 
     return ALU()
