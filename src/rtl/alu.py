@@ -20,6 +20,8 @@ Copyright Digisim, Computer Architecture team of South China University of Techn
 """
 from pyhcl import *
 from src.include.pkg import *
+from src.rtl.alu_div import *
+from src.rtl.popcnt import *
 
 
 def alu():
@@ -248,5 +250,40 @@ def alu():
         ##################################################################################
         # DIV / REM
         ##################################################################################
+
+        result_div = Wire(U.w(32))
+        div_ready, div_signed, div_op_a_signed = [Wire(Bool) for _ in range(3)]
+        div_shift_int = Wire(U.w(6))
+
+        div_signed <<= io.operator_i[0]
+
+        div_op_a_signed <<= io.operand_a_i[31] & div_signed
+
+        div_shift_int <<= U.w(6)(31)
+        div_shift <<= div_shift_int + Mux(div_op_a_signed, U(0), U(1))
+
+        div_valid <<= io.enable_i & ((io.operator_i == ALU_DIV) | (io.operator_i == ALU_DIVU) |
+                                     (io.operator_i == ALU_REM) | (io.operator_i == ALU_REMU))
+
+        # Inputs A and B are swapped
+        alu_div_i = alu_div()
+        alu_div_i.io.OpA_DI <<= io.operand_b_i
+        alu_div_i.io.OpB_DI <<= shift_left_result
+        alu_div_i.io.OpBShift_DI <<= div_shift
+
+        cnt_result = Wire(U.w(6))
+        popcnt_i = popcnt()
+        popcnt_i.io.in_i <<= io.operand_a_i
+        cnt_result <<= popcnt_i.io.result_o
+        alu_div_i.io.OpBIsZero_SI <<= cnt_result == U(0)
+
+        alu_div_i.OpBSign_SI <<= div_op_a_signed
+        alu_div_i.OpCode_SI <<= io.operator_i[1:0]
+
+        result_div <<= alu_div_i.io.Res_DO
+
+        alu_div_i.io.InVld_SI <<= div_valid
+        alu_div_i.io.OutRdy_SI <<= io.ex_ready_i
+        div_ready <<= alu_div_i.io.OutVld_SO
 
     return ALU()
