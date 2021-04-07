@@ -160,7 +160,7 @@ def alu():
         ari_lst = []                # Arithmetic shift list
         for i in range(32):
             ari_lst.append(shift_op_a[31])
-        not_ror = Mux(shift_arithmetic, CatBits(ari_lst, shift_op_a), CatBits(U.w(32)(0), shift_op_a))
+        not_ror = Mux(shift_arithmetic, CatBits(*ari_lst, shift_op_a), CatBits(U.w(32)(0), shift_op_a))
         shift_op_a_32 <<= Mux(io.operator_i == ALU_ROR, CatBits(shift_op_a, shift_op_a), not_ror.to_sint())
 
         shift_right_result <<= shift_op_a_32 >> shift_amt_int[4:0]
@@ -169,7 +169,7 @@ def alu():
         reverse_lst = [Wire(Bool) for _ in range(32)]
         for j in range(32):
             reverse_lst[j] <<= shift_right_result[31-j]
-        shift_left_result <<= CatBits(reverse_lst)
+        shift_left_result <<= CatBits(*reverse_lst)
 
         shift_result <<= Mux(shift_left, shift_left_result, shift_right_result)
 
@@ -204,5 +204,49 @@ def alu():
             is_greater_vec[i] = CatBits(io.operand_a_o[8*i+7] & cmp_signed[i], io.operand_a_i[8*i+7:8*i]).to_sint() > \
                                 CatBits(io.operand_b_o[8*i+7] & cmp_signed[i], io.operand_b_i[8*i+7:8*i]).to_sint()
 
+        # Generate the real equal and greater than signals that take the vector mode into account
+        # Always 32-bit mode
+        is_equal_s = is_equal_vec[3] & is_equal_vec[2] & is_equal_vec[1] & is_equal_vec[0]
+        is_equal_lst = []
+        for i in range(4):
+            is_equal_lst.append(is_equal_s)
+        is_equal <<= CatBits(*is_equal_lst)
+        is_greater_s = is_greater_vec[3] | (is_equal_vec[3] & (is_greater_vec[2]
+                                            | (is_equal_vec[2] & (is_greater_vec[1]
+                                                | (is_equal_vec[1] & (is_greater_vec[0]))))))
+        is_greater_lst = []
+        for i in range(4):
+            is_greater_lst.append(is_greater_s)
+        is_greater <<= CatBits(*is_greater_lst)
+
+        # Generate comparison result
+        cmp_result = Wire(U.w(4))
+        cmp_result <<= is_equal
+
+        cmp_result <<= LookUpTable(io.operator_i, {
+            ALU_EQ: is_equal,
+            ALU_NE: ~is_equal,
+            ALU_GTS: is_greater,
+            ALU_GTU: is_greater,
+            ALU_GES: is_greater | is_equal,
+            ALU_GEU: is_greater | is_equal,
+            ALU_LTS: ~(is_greater | is_equal),
+            ALU_SLTS: ~(is_greater | is_equal),
+            ALU_LTU: ~(is_greater | is_equal),
+            ALU_SLTU: ~(is_greater | is_equal),
+            ALU_SLETS: ~is_greater,
+            ALU_SLETU: ~is_greater,
+            ALU_LES: ~is_greater,
+            ALU_LEU: ~is_greater,
+        })
+
+        io.comparison_result_o <<= cmp_result[3]
+
+        # No min/max/abs support
+        # No Clip, Shuffle, Bit Manipulation
+
+        ##################################################################################
+        # DIV / REM
+        ##################################################################################
 
     return ALU()
