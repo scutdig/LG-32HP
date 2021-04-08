@@ -44,6 +44,8 @@ def alu():
             ready_o=Output(Bool),
             ex_ready_i=Input(Bool)
         )
+        alu_div_i = alu_div()
+        popcnt_i = popcnt()
 
         operand_a_rev = Wire(U.w(32))
         operand_a_neg = Wire(U.w(32))
@@ -62,7 +64,7 @@ def alu():
         # Bit reverse operand_a_neg for left shifts and bit counting
         op_a_neg_rev_arr = []
         for i in range(32):
-            op_a_neg_rev_arr.append(op_a_neg_rev_arr[31-i])
+            op_a_neg_rev_arr.append(operand_a_neg[31-i])
         operand_a_neg_rev <<= CatBits(*op_a_neg_rev_arr)
 
         operand_b_neg = Wire(U.w(32))
@@ -70,7 +72,6 @@ def alu():
 
         div_shift = Wire(U.w(6))
         div_valid = Wire(Bool)
-        bmask = Wire(U.w(32))
 
         ##################################################################################
         # Partitioned Adder
@@ -107,9 +108,7 @@ def alu():
         adder_round_value = Wire(U.w(32))
         adder_round_result = Wire(U.w(32))
 
-        adder_round_value <<= Mux(((io.operator_i == ALU_ADDR) | (io.operator_i == ALU_SUBR) |
-                                  (io.operator_i == ALU_ADDUR) | (io.operator_i == ALU_SUBUR)),
-                                  CatBits(U.w(1)(0), bmask[31:1]), U(0))
+        adder_round_value <<= U(0)
         adder_round_result <<= adder_result + adder_round_value
 
         ##################################################################################
@@ -163,7 +162,7 @@ def alu():
         for i in range(32):
             ari_lst.append(shift_op_a[31])
         not_ror = Mux(shift_arithmetic, CatBits(*ari_lst, shift_op_a), CatBits(U.w(32)(0), shift_op_a))
-        shift_op_a_32 <<= Mux(io.operator_i == ALU_ROR, CatBits(shift_op_a, shift_op_a), not_ror.to_sint())
+        shift_op_a_32 <<= Mux(io.operator_i == ALU_ROR, CatBits(shift_op_a, shift_op_a), not_ror)
 
         shift_right_result <<= shift_op_a_32 >> shift_amt_int[4:0]
 
@@ -203,8 +202,8 @@ def alu():
 
         for i in range(4):
             is_equal_vec[i] <<= io.operand_a_i[8*i+7:8*i] == io.operand_b_i[8*i+7:8*i]
-            is_greater_vec[i] = CatBits(io.operand_a_o[8*i+7] & cmp_signed[i], io.operand_a_i[8*i+7:8*i]).to_sint() > \
-                                CatBits(io.operand_b_o[8*i+7] & cmp_signed[i], io.operand_b_i[8*i+7:8*i]).to_sint()
+            is_greater_vec[i] <<= (CatBits(io.operand_a_i[8*i+7] & cmp_signed[i], io.operand_a_i[8*i+7:8*i]).to_sint() > \
+                                CatBits(io.operand_b_i[8*i+7] & cmp_signed[i], io.operand_b_i[8*i+7:8*i]).to_sint()).to_bool()
 
         # Generate the real equal and greater than signals that take the vector mode into account
         # Always 32-bit mode
@@ -240,6 +239,7 @@ def alu():
             ALU_SLETU: ~is_greater,
             ALU_LES: ~is_greater,
             ALU_LEU: ~is_greater,
+            ...: is_equal
         })
 
         io.comparison_result_o <<= cmp_result[3]
@@ -266,19 +266,19 @@ def alu():
                                      (io.operator_i == ALU_REM) | (io.operator_i == ALU_REMU))
 
         # Inputs A and B are swapped
-        alu_div_i = alu_div()
+
         alu_div_i.io.OpA_DI <<= io.operand_b_i
         alu_div_i.io.OpB_DI <<= shift_left_result
         alu_div_i.io.OpBShift_DI <<= div_shift
 
         cnt_result = Wire(U.w(6))
-        popcnt_i = popcnt()
+
         popcnt_i.io.in_i <<= io.operand_a_i
         cnt_result <<= popcnt_i.io.result_o
         alu_div_i.io.OpBIsZero_SI <<= cnt_result == U(0)
 
-        alu_div_i.OpBSign_SI <<= div_op_a_signed
-        alu_div_i.OpCode_SI <<= io.operator_i[1:0]
+        alu_div_i.io.OpBSign_SI <<= div_op_a_signed
+        alu_div_i.io.OpCode_SI <<= io.operator_i[1:0]
 
         result_div <<= alu_div_i.io.Res_DO
 
@@ -286,4 +286,47 @@ def alu():
         alu_div_i.io.OutRdy_SI <<= io.ex_ready_i
         div_ready <<= alu_div_i.io.OutVld_SO
 
+        ##################################################################################
+        # Result Mux
+        ##################################################################################
+        io.result_o <<= U(0)
+
+        with when(io.operator_i == ALU_AND):
+            io.result_o <<= io.operand_a_i & io.operand_b_i
+        with elsewhen(io.operator_i == ALU_OR):
+            io.result_o <<= io.operand_a_i | io.operand_b_i
+        with elsewhen(io.operator_i == ALU_XOR):
+            io.result_o <<= io.operand_a_i ^ io.operand_b_i
+        with elsewhen((io.operator_i == ALU_ADD) | (io.operator_i == ALU_ADDR) | (io.operator_i == ALU_ADDU) |
+                      (io.operator_i == ALU_ADDUR) | (io.operator_i == ALU_SUB) | (io.operator_i == ALU_SUBR) |
+                      (io.operator_i == ALU_SUBUR) | (io.operator_i == ALU_SLL) | (io.operator_i == ALU_SRL) |
+                      (io.operator_i == ALU_SRA) | (io.operator_i == ALU_ROR)):
+            io.result_o <<= shift_result
+        with elsewhen((io.operator_i == ALU_EQ) | (io.operator_i == ALU_NE) | (io.operator_i == ALU_GTU) |
+                      (io.operator_i == ALU_GEU) | (io.operator_i == ALU_LTU) | (io.operator_i == ALU_LEU) |
+                      (io.operator_i == ALU_GTS) | (io.operator_i == ALU_GES) | (io.operator_i == ALU_LTS) |
+                      (io.operator_i == ALU_LES)):
+            cmp_res_lst0 = []
+            cmp_res_lst1 = []
+            cmp_res_lst2 = []
+            cmp_res_lst3 = []
+            for i in range(8):
+                cmp_res_lst0.append(cmp_result[0])
+                cmp_res_lst1.append(cmp_result[1])
+                cmp_res_lst2.append(cmp_result[2])
+                cmp_res_lst3.append(cmp_result[3])
+            io.result_o <<= CatBits(*cmp_res_lst3, *cmp_res_lst2, *cmp_res_lst1, *cmp_res_lst0)
+        with elsewhen((io.operator_i == ALU_SLTS) | (io.operator_i == ALU_SLTU) | (io.operator_i == ALU_SLETS) |
+                      (io.operator_i == ALU_SLETU)):
+            io.result_o <<= CatBits(U.w(31)(0), io.comparison_result_o)
+        with elsewhen((io.operator_i == ALU_DIV) | (io.operator_i == ALU_DIVU) | (io.operator_i == ALU_REM) |
+                      (io.operator_i == ALU_REMU)):
+            io.result_o <<= result_div
+
+        io.ready_o <<= div_ready
+
     return ALU()
+
+
+if __name__ == '__main__':
+    Emitter.dumpVerilog_nock(Emitter.dump(Emitter.emit(alu()), "alu.fir"))
