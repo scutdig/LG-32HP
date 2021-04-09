@@ -136,6 +136,72 @@ def load_store_unit(PULP_OBI=0):
                 })
 
         with elsewhen(io.data_type_ex_i == U.w(2)(0b01)):
-            pass
+            # Writing a half word
+            with when(misaligned_st == Bool(False)):
+                # non-misaligned case
+                data_be <<= LookUpTable(data_addr_int[1:0], {
+                    U.w(2)(0b00): U.w(4)(0b0011),
+                    U.w(2)(0b01): U.w(4)(0b0110),
+                    U.w(2)(0b10): U.w(4)(0b1100),
+                    U.w(2)(0b11): U.w(4)(0b1000),
+                    ...: U.w(4)(0b0011)
+                })
+            with otherwise():
+                data_be <<= U.w(4)(0b0001)
+
+        with elsewhen((io.data_type_ex_i == U.w(2)(0b10)) | (io.data_type_ex_i == U.w(2)(0b11))):
+            # Writing a byte
+            data_be <<= LookUpTable(data_addr_int[1:0], {
+                U.w(2)(0b00): U.w(4)(0b0001),
+                U.w(2)(0b01): U.w(4)(0b0010),
+                U.w(2)(0b10): U.w(4)(0b0100),
+                U.w(2)(0b11): U.w(4)(0b1000),
+                ...: U.w(4)(0b0001)
+            })
+
+        # prepare data to be written to the memory
+        # we handle misaligned accesses, half word and byte accesses and
+        # register offsets here
+        wdata_offset <<= data_addr_int[1:0] - io.data_reg_offset_ex_i[1:0]
+        data_wdata <<= LookUpTable(wdata_offset, {
+            U.w(2)(0b00): io.data_wdata_ex_i[31:0],
+            U.w(2)(0b01): CatBits(io.data_wdata_ex_i[23:0], io.data_wdata_ex_i[31:24]),
+            U.w(2)(0b10): CatBits(io.data_wdata_ex_i[15:0], io.data_wdata_ex_i[31:16]),
+            U.w(2)(0b11): CatBits(io.data_wdata_ex_i[7:0], io.data_wdata_ex_i[31:8]),
+            ...: io.data_wdata_ex_i[31:0]
+        })
+
+        # FF for rdata alignment and sign-extension
+        data_type_q <<= io.data_type_ex_i
+        rdata_offset_q <<= data_addr_int[1:0]
+        data_sign_ext_q <<= io.data_sign_ext_ex_i
+        data_we_q <<= io.data_we_ex_i
+        data_load_event_q <<= io.data_load_event_ex_i
+
+        # Load event starts when request is sent and finishes when (final) rvalid is received
+        io.p_elw_start_o <<= io.data_load_event_ex_i & io.data_req_o
+        io.p_elw_finish_o <<= data_load_event_q & io.data_rvalid_i & (~io.data_misaligned_ex_i)
+
+        ##################################################################################
+        # Sign Extension
+        ##################################################################################
+
+        data_rdata_ext = Wire(U.w(32))
+
+        rdata_w_ext = Wire(U.w(32))         # Sign extension for words, actually only misaligned assembly
+        rdata_h_ext = Wire(U.w(32))         # Sign extension for half words
+        rdata_b_ext = Wire(U.w(32))         # Sign extension for bytes
+
+        # Take care of misaligned words
+        rdata_w_ext <<= LookUpTable(rdata_offset_q, {
+            U.w(2)(0b00): resp_rdata[31:0],
+            U.w(2)(0b01): CatBits(resp_rdata[7:0], rdata_q[31:8]),
+            U.w(2)(0b10): CatBits(resp_rdata[15:0], rdata_q[31:16]),
+            U.w(2)(0b11): CatBits(resp_rdata[23:0], rdata_q[31:24]),
+            ...: resp_rdata[31:0]
+        })
+
+        # Sign extension for half words
+        
 
     return LOAD_STORE_UNIT()
