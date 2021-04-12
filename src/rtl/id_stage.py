@@ -103,14 +103,11 @@ def id_stage(PULP_SECURE=0, USE_PMP=0, DEBUG_TRIGGER_EN=1):
             regfile_we_ex_o=Output(Bool),
 
             regfile_alu_waddr_ex_o=Output(U.w(6)),
-            regfile_alu_ex_o=Output(Bool),
+            regfile_alu_we_ex_o=Output(Bool),
 
             # ALU
             alu_en_ex_o=Output(Bool),
             alu_operator_ex_o=Output(U.w(ALU_OP_WIDTH)),
-            alu_is_clpx_ex_o=Output(Bool),
-            alu_is_subrot_ex_o=Output(Bool),
-            alu_clpx_shift_ex_o=Output(U.w(2)),
 
             # MUL
             mult_operator_ex_o=Output(U.w(MUL_OP_WIDTH)),
@@ -118,7 +115,7 @@ def id_stage(PULP_SECURE=0, USE_PMP=0, DEBUG_TRIGGER_EN=1):
             mult_operand_b_ex_o=Output(U.w(32)),
             mult_operand_c_ex_o=Output(U.w(32)),
             mult_en_ex_o=Output(Bool),
-            mult_sel_subword_ex_o=Output(Bool),
+            # mult_sel_subword_ex_o=Output(Bool),
             mult_signed_mode_ex_o=Output(U.w(2)),
             mult_imm_ex_o=Output(U.w(5)),
 
@@ -130,7 +127,7 @@ def id_stage(PULP_SECURE=0, USE_PMP=0, DEBUG_TRIGGER_EN=1):
             csr_access_ex_o=Output(Bool),
             csr_op_ex_o=Output(U.w(CSR_OP_WIDTH)),
             current_priv_lvl_i=Input(U.w(PRIV_SEL_WIDTH)),
-            csr_irq_sec_i=Output(Bool),
+            csr_irq_sec_o=Output(Bool),
             csr_cause_o=Output(U.w(6)),
             csr_save_if_o=Output(Bool),
             csr_save_id_o=Output(Bool),
@@ -183,7 +180,7 @@ def id_stage(PULP_SECURE=0, USE_PMP=0, DEBUG_TRIGGER_EN=1):
             debug_halted_o=Output(Bool),
 
             # Wakeup Signal
-            wkae_from_sleep_o=Output(Bool),
+            wake_from_sleep_o=Output(Bool),
 
             # Forward Signals
             regfile_waddr_wb_i=Input(U.w(6)),
@@ -214,6 +211,11 @@ def id_stage(PULP_SECURE=0, USE_PMP=0, DEBUG_TRIGGER_EN=1):
             perf_imiss_i=Input(Bool),
             mcounteren_i=Input(U.w(32))
         )
+        # Initial modules
+        rf = register_file(ADDR_WIDTH=6, DATA_WIDTH=32)
+        de = decoder(PULP_SECURE=PULP_SECURE, USE_PMP=USE_PMP, DEBUG_TRIGGER_EN=DEBUG_TRIGGER_EN)
+        co = controller()
+        int_co = int_controller()
 
         instr = Wire(U.w(32))
 
@@ -321,7 +323,7 @@ def id_stage(PULP_SECURE=0, USE_PMP=0, DEBUG_TRIGGER_EN=1):
         data_sign_ext_id = Wire(U.w(2))
         data_reg_offset_id = Wire(U.w(2))
         data_req_id = Wire(Bool)
-        data_load_event_id = Wire(Bool)
+        # data_load_event_id = Wire(Bool)
 
         # CSR control
         csr_access = Wire(Bool)
@@ -372,7 +374,7 @@ def id_stage(PULP_SECURE=0, USE_PMP=0, DEBUG_TRIGGER_EN=1):
         mret_dec, uret_dec, dret_dec = [Wire(Bool) for _ in range(3)]
 
         # Performance counters
-        id_valid_q = Wire(Bool)
+        id_valid_q = RegInit(Bool(False))
         minstret = Wire(Bool)
         perf_pipeline_stall = Wire(Bool)
 
@@ -527,7 +529,7 @@ def id_stage(PULP_SECURE=0, USE_PMP=0, DEBUG_TRIGGER_EN=1):
         alu_operand_c <<= operand_c
 
         # Operand c forwarding Mux
-        operand_a_fw_id <<= LookUpTable(operand_c_fw_mux_sel, {
+        operand_c_fw_id <<= LookUpTable(operand_c_fw_mux_sel, {
             SEL_FW_EX: io.regfile_alu_wdata_fw_i,
             SEL_FW_WB: io.regfile_wdata_wb_i,
             SEL_REGFILE: regfile_data_rc_id,
@@ -571,12 +573,6 @@ def id_stage(PULP_SECURE=0, USE_PMP=0, DEBUG_TRIGGER_EN=1):
 
         # Deprecated APU
 
-        # Initial modules
-        rf = register_file(ADDR_WIDTH=6, DATA_WIDTH=32)
-        de = decoder(PULP_SECURE=PULP_SECURE, USE_PMP=USE_PMP, DEBUG_TRIGGER_EN=DEBUG_TRIGGER_EN)
-        co = controller()
-        int_co = int_controller()
-
         ##################################################################################
         # Registers
         ##################################################################################
@@ -597,12 +593,14 @@ def id_stage(PULP_SECURE=0, USE_PMP=0, DEBUG_TRIGGER_EN=1):
         # Write port a
         rf.io.waddr_a_i <<= io.regfile_waddr_wb_i
         rf.io.wdata_a_i <<= io.regfile_wdata_wb_i
-        rf.io.we_a_i <<= io.regfile_we_wb_i
+        # TODO: Remember to uncomment this after adding we signal
+        # rf.io.we_a_i <<= io.regfile_we_wb_i
 
         # Write port b
         rf.io.waddr_b_i <<= io.regfile_alu_waddr_fw_i
         rf.io.wdata_b_i <<= io.regfile_alu_wdata_fw_i
-        rf.io.we_b_i <<= io.regfile_alu_we_fw_i
+        # TODO: Remember to uncomment this after adding we signal
+        # rf.io.we_b_i <<= io.regfile_alu_we_fw_i
 
         ##################################################################################
         # Decoder
@@ -620,7 +618,11 @@ def id_stage(PULP_SECURE=0, USE_PMP=0, DEBUG_TRIGGER_EN=1):
         uret_insn_dec <<= de_io.uret_insn_o
         dret_insn_dec <<= de_io.dret_insn_o
 
-        ecall_insn_dec <<= de_io.call_insn_o
+        mret_dec <<= de_io.mret_dec_o
+        uret_dec <<= de_io.uret_dec_o
+        dret_dec <<= de_io.dret_dec_o
+
+        ecall_insn_dec <<= de_io.ecall_insn_o
         wfi_insn_dec <<= de_io.wfi_o
 
         fencei_insn_dec <<= de_io.fencei_insn_o
@@ -676,6 +678,7 @@ def id_stage(PULP_SECURE=0, USE_PMP=0, DEBUG_TRIGGER_EN=1):
         data_type_id <<= de_io.data_type_o
         data_sign_ext_id <<= de_io.data_sign_extension_o
         data_reg_offset_id <<= de_io.data_reg_offset_o
+        # data_load_event_id <<= de_io.data_load_event_o
 
         # Debug mode
         de_io.debug_mode_i <<= io.debug_mode_o
@@ -695,10 +698,10 @@ def id_stage(PULP_SECURE=0, USE_PMP=0, DEBUG_TRIGGER_EN=1):
         # TODO: Gated clock
         co_io = co.io
 
-        co_io.fetech_enable_i <<= io.fetch_enable_i
+        co_io.fetch_enable_i <<= io.fetch_enable_i
         io.ctrl_busy_o <<= co_io.ctrl_busy_o
         io.is_decoding_o <<= co_io.is_decoding_o
-        co_io.is_fetch_failed_o <<= io.is_fetch_failed_i
+        co_io.is_fetch_failed_i <<= io.is_fetch_failed_i
 
         # Decoder related signals
         deassert_we <<= co_io.deassert_we_o
@@ -728,14 +731,14 @@ def id_stage(PULP_SECURE=0, USE_PMP=0, DEBUG_TRIGGER_EN=1):
         io.pc_set_o <<= co_io.pc_set_o
         io.pc_mux_o <<= co_io.pc_mux_o
         io.exc_pc_mux_o <<= co_io.exc_pc_mux_o
-        io.exc_cause_o <<= co_io.exc_cuase_o
+        io.exc_cause_o <<= co_io.exc_cause_o
         io.trap_addr_mux_o <<= co_io.trap_addr_mux_o
 
         # LSU
         co_io.data_req_ex_i <<= io.data_req_ex_o
         co_io.data_we_ex_i <<= io.data_we_ex_o
         co_io.data_misaligned_i <<= io.data_misaligned_i
-        co_io.data_load_event_i <<= data_load_event_id
+        co_io.data_load_event_i <<= Bool(False)
         co_io.data_err_i <<= io.data_err_i
         io.data_err_ack_o <<= co_io.data_err_ack_o
 
@@ -855,4 +858,229 @@ def id_stage(PULP_SECURE=0, USE_PMP=0, DEBUG_TRIGGER_EN=1):
         # ID/EX pipeline
         ##################################################################################
 
+        alu_en_ex_o = RegInit(Bool(False))
+        alu_operator_ex_o = RegInit(ALU_SLTU)
+        alu_operand_a_ex_o = RegInit(U.w(32)(0))
+        alu_operand_b_ex_o = RegInit(U.w(32)(0))
+        alu_operand_c_ex_o = RegInit(U.w(32)(0))
+        bmask_a_ex_o = RegInit(U.w(5)(0))
+        bmask_b_ex_o = RegInit(U.w(5)(0))
+        imm_vec_ext_ex_o = RegInit(U.w(2)(0))
+
+        mult_operator_ex_o = RegInit(U.w(MUL_OP_WIDTH)(0b000))
+        mult_operand_a_ex_o = RegInit(U.w(32)(0))
+        mult_operand_b_ex_o = RegInit(U.w(32)(0))
+        mult_operand_c_ex_o = RegInit(U.w(32)(0))
+        mult_en_ex_o = RegInit(Bool(False))
+        # mult_sel_subword_ex_o = RegInit(Bool(False))
+        mult_signed_mode_ex_o = RegInit(U.w(2)(0))
+        mult_imm_ex_o = RegInit(U.w(5)(0))
+
+        regfile_waddr_ex_o = RegInit(U.w(6)(0))
+        regfile_we_ex_o = RegInit(Bool(False))
+
+        regfile_alu_waddr_ex_o = RegInit(U.w(6)(0))
+        regfile_alu_we_ex_o = RegInit(Bool(False))
+        prepost_useincr_ex_o = RegInit(Bool(False))
+
+        csr_access_ex_o = RegInit(Bool(False))
+        csr_op_ex_o = RegInit(CSR_OP_READ)
+
+        data_we_ex_o = RegInit(Bool(False))
+        data_type_ex_o = RegInit(U.w(2)(0))
+        data_sign_ext_ex_o = RegInit(U.w(2)(0))
+        data_reg_offset_ex_o = RegInit(U.w(2)(0))
+        data_req_ex_o = RegInit(Bool(False))
+        data_load_event_ex_o = RegInit(Bool(False))
+
+        data_misaligned_ex_o = RegInit(Bool(False))
+
+        pc_ex_o = RegInit(U.w(32)(0))
+
+        branch_in_ex_o = RegInit(Bool(False))
+
+        with when(io.data_misaligned_i):
+            # misaligned data access case
+            with when(io.ex_ready_i):
+                # misaligned access case, only unstall alu operands
+                # if we are using post increments, then we have to use the
+                # original value of the register for the second memory access
+                # => keep it stalled
+                with when(prepost_useincr_ex_o):
+                    alu_operand_a_ex_o <<= operand_a_fw_id
+
+                alu_operand_b_ex_o <<= U.w(32)(0x4)
+                regfile_alu_we_ex_o <<= Bool(False)
+                prepost_useincr_ex_o <<= Bool(True)
+
+                data_misaligned_ex_o <<= Bool(True)
+        with elsewhen(io.mult_multicycle_i):
+            mult_operand_c_ex_o <<= operand_c_fw_id
+        with otherwise():
+            # Normal pipeline unstall case
+
+            with when(io.id_valid_o):
+                # unstall the whole pipeline
+                alu_en_ex_o <<= alu_en
+                with when(alu_en):
+                    alu_operator_ex_o         <<= alu_operator
+                    alu_operand_a_ex_o        <<= alu_operand_a
+                    alu_operand_b_ex_o        <<= alu_operand_b
+                    alu_operand_c_ex_o        <<= alu_operand_c
+                    bmask_a_ex_o              <<= bmask_a_id
+                    bmask_b_ex_o              <<= bmask_b_id
+                    imm_vec_ext_ex_o          <<= imm_vec_ext_id
+
+                mult_en_ex_o <<= mult_en
+                with when(mult_en):
+                    mult_operator_ex_o        <<= mult_operator
+                    # mult_sel_subword_ex_o     <<= mult_sel_subword
+                    mult_signed_mode_ex_o     <<= mult_signed_mode
+                    mult_operand_a_ex_o       <<= alu_operand_a
+                    mult_operand_b_ex_o       <<= alu_operand_b
+                    mult_operand_c_ex_o       <<= alu_operand_c
+                    mult_imm_ex_o             <<= mult_imm_id
+
+                regfile_we_ex_o <<= regfile_we_id
+                with when(regfile_we_id):
+                    regfile_waddr_ex_o <<= regfile_waddr_id
+
+                regfile_alu_we_ex_o <<= regfile_alu_we_id
+                with when(regfile_alu_we_id):
+                    regfile_alu_waddr_ex_o <<= regfile_alu_waddr_id
+
+                prepost_useincr_ex_o <<= prepost_useincr
+
+                csr_access_ex_o <<= csr_access
+                csr_op_ex_o <<= csr_op
+
+                data_req_ex_o <<= data_req_id
+                with when(data_req_id):
+                    data_we_ex_o              <<= data_we_id
+                    data_type_ex_o            <<= data_type_id
+                    data_sign_ext_ex_o        <<= data_sign_ext_id
+                    data_reg_offset_ex_o      <<= data_reg_offset_id
+                    # data_load_event_ex_o      <<= data_load_event_id
+                with otherwise():
+                    data_load_event_ex_o <<= Bool(False)
+
+                data_misaligned_ex_o <<= Bool(False)
+
+                with when((ctrl_transfer_insn_in_id == BRANCH_COND) | data_req_id):
+                    pc_ex_o <<= io.pc_id_i
+
+                branch_in_ex_o <<= ctrl_transfer_insn_in_id == BRANCH_COND
+
+            with elsewhen(io.ex_ready_i):
+                # EX stage is ready but we don't have a new instruction for it,
+                # so we set all write enables to 0, but unstall the pipe
+                regfile_we_ex_o <<= Bool(False)
+                regfile_alu_we_ex_o <<= Bool(False)
+                csr_op_ex_o <<= CSR_OP_READ
+                data_req_ex_o <<= Bool(False)
+                data_load_event_ex_o <<= Bool(False)
+                data_misaligned_ex_o <<= Bool(False)
+                branch_in_ex_o <<= Bool(False)
+                alu_operator_ex_o <<= ALU_SLTU
+                mult_en_ex_o <<= Bool(False)
+                alu_en_ex_o <<= Bool(True)
+
+            with elsewhen(csr_access_ex_o):
+                # In the EX stage there was a CSR access, to avoid multiple
+                # writes to the RF, disable regfile_alu_we_ex_o.
+                # Not doing it can overwrite the RF file with the currennt CSR value rather than the old one
+                regfile_alu_we_ex_o <<= Bool(False)
+
+        # Performance Counter Events
+
+        # Illegal/ebreak/ecall are never counted as retired instructions. Note that actually issued instructions
+        # are being counted; the manner in which CSR instructions access the performance counters guarantees
+        # that this count will correspond to the retired isntructions count.
+        minstret <<= io.id_valid_o & io.is_decoding_o & (~(illegal_insn_dec | ebrk_insn_dec | ecall_insn_dec))
+
+        mhpmevent_minstret_o       = RegInit(Bool(False))
+        mhpmevent_load_o           = RegInit(Bool(False))
+        mhpmevent_store_o          = RegInit(Bool(False))
+        mhpmevent_jump_o           = RegInit(Bool(False))
+        mhpmevent_branch_o         = RegInit(Bool(False))
+        mhpmevent_compressed_o     = RegInit(Bool(False))
+        mhpmevent_branch_taken_o   = RegInit(Bool(False))
+        mhpmevent_jr_stall_o       = RegInit(Bool(False))
+        mhpmevent_imiss_o          = RegInit(Bool(False))
+        mhpmevent_ld_stall_o       = RegInit(Bool(False))
+        mhpmevent_pipe_stall_o     = RegInit(Bool(False))
+
+        # Helper signal
+        id_valid_q <<= io.id_valid_o
+        # ID stage counts
+        mhpmevent_minstret_o <<= minstret
+        mhpmevent_load_o <<= minstret & data_req_id & (~data_we_id)
+        mhpmevent_store_o <<= minstret & data_req_id & data_we_id
+        mhpmevent_jump_o <<= minstret & ((ctrl_transfer_insn_in_id == BRANCH_JAL) | (ctrl_transfer_insn_in_id == BRANCH_JALR))
+        mhpmevent_branch_o <<= minstret & (ctrl_transfer_insn_in_id == BRANCH_COND)
+        mhpmevent_compressed_o <<= minstret & io.is_compressed_i
+        # EX stage count
+        mhpmevent_branch_taken_o <<= mhpmevent_branch_o & io.branch_decision_i
+        # IF stage count
+        mhpmevent_imiss_o <<= io.perf_imiss_i
+        # Jump-register-hazard; do not count stall on flushed instructions (id_valid_q used to only count first cycle)
+        mhpmevent_jr_stall_o <<= jr_stall & (~halt_id) & id_valid_q
+        # Load-use-hazard; do not count stall on flushed instructions (id_valid_q used to only count first cycle)
+        mhpmevent_ld_stall_o <<= load_stall & (~halt_id) & id_valid_q
+        # ELW
+        mhpmevent_pipe_stall_o <<= perf_pipeline_stall
+
+        # Stall control
+        io.id_ready_o <<= ((~misaligned_stall) & (~jr_stall) & (~load_stall) & io.ex_ready_i)
+        io.id_valid_o <<= (~halt_id) & io.id_ready_o
+        io.halt_if_o <<= halt_if
+
+        # Connect register outputs
+        io.alu_en_ex_o <<= alu_en_ex_o
+        io.alu_operator_ex_o <<= alu_operator_ex_o
+        io.alu_operand_a_ex_o <<= alu_operand_a_ex_o
+        io.alu_operand_b_ex_o <<= alu_operand_b_ex_o
+        io.alu_operand_c_ex_o <<= alu_operand_c_ex_o
+        io.bmask_a_ex_o <<= bmask_a_ex_o
+        io.bmask_b_ex_o <<= bmask_b_ex_o
+        io.imm_vec_ext_ex_o <<= imm_vec_ext_ex_o
+        io.mult_operator_ex_o <<= mult_operator_ex_o
+        io.mult_operand_a_ex_o <<= mult_operand_a_ex_o
+        io.mult_operand_b_ex_o <<= mult_operand_b_ex_o
+        io.mult_operand_c_ex_o <<= mult_operand_c_ex_o
+        io.mult_en_ex_o <<= mult_en_ex_o
+        io.mult_signed_mode_ex_o <<= mult_signed_mode_ex_o
+        io.mult_imm_ex_o <<= mult_imm_ex_o
+        io.regfile_waddr_ex_o <<= regfile_waddr_ex_o
+        io.regfile_we_ex_o <<= regfile_we_ex_o
+        io.regfile_alu_waddr_ex_o <<= regfile_alu_waddr_ex_o
+        io.regfile_alu_we_ex_o <<= regfile_alu_we_ex_o
+        io.prepost_useincr_ex_o <<= prepost_useincr_ex_o
+        io.csr_access_ex_o <<= csr_access_ex_o
+        io.csr_op_ex_o <<= csr_op_ex_o
+        io.data_we_ex_o <<= data_we_ex_o
+        io.data_type_ex_o <<= data_type_ex_o
+        io.data_sign_ext_ex_o <<= data_sign_ext_ex_o
+        io.data_reg_offset_ex_o <<= data_reg_offset_ex_o
+        io.data_req_ex_o <<= data_req_ex_o
+        io.data_load_event_ex_o <<= data_load_event_ex_o
+        io.data_misaligned_ex_o <<= data_misaligned_ex_o
+        io.pc_ex_o <<= pc_ex_o
+        io.branch_in_ex_o <<= branch_in_ex_o
+        io.mhpmevent_minstret_o <<= mhpmevent_minstret_o
+        io.mhpmevent_load_o <<= mhpmevent_load_o
+        io.mhpmevent_store_o <<= mhpmevent_store_o
+        io.mhpmevent_jump_o <<= mhpmevent_jump_o
+        io.mhpmevent_branch_o <<= mhpmevent_branch_o
+        io.mhpmevent_compressed_o <<= mhpmevent_compressed_o
+        io.mhpmevent_branch_taken_o <<= mhpmevent_branch_taken_o
+        io.mhpmevent_jr_stall_o <<= mhpmevent_jr_stall_o
+        io.mhpmevent_imiss_o <<= mhpmevent_imiss_o
+        io.mhpmevent_ld_stall_o <<= mhpmevent_ld_stall_o
+        io.mhpmevent_pipe_stall_o <<= mhpmevent_pipe_stall_o
+
     return ID_STAGE()
+
+
+if __name__ == '__main__':
+    Emitter.dumpVerilog_nock(Emitter.dump(Emitter.emit(id_stage()), "id_stage.fir"))

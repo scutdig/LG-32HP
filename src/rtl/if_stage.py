@@ -60,8 +60,8 @@ def if_stage(PULP_XPULP=0, PULP_OBI=0, PULP_SCORE=0, FPU=0):
             # instruction request control
             req_i=Input(Bool),
             # instruction cache interface
-            insrt_req_o=Output(Bool),
-            insrt_addr_o=Output(U.w(32)),
+            instr_req_o=Output(Bool),
+            instr_addr_o=Output(U.w(32)),
             instr_gnt_i=Input(Bool),
             instr_rvalid_i=Input(Bool),
             instr_rdata_i=Input(U.w(32)),
@@ -99,6 +99,10 @@ def if_stage(PULP_XPULP=0, PULP_OBI=0, PULP_SCORE=0, FPU=0):
             if_busy_o=Output(Bool),
             perf_imiss_o=Output(Bool)
         )
+        prefetch_buffer_i = prefetch_buffer(PULP_OBI).io
+        aligner_i = aligner().io
+        compressed_decoder_i = compressed_decoder(FPU).io
+
         if_valid = Wire(Bool)
         if_ready = Wire(Bool)
         # prefetch buffer related signals
@@ -153,7 +157,7 @@ def if_stage(PULP_XPULP=0, PULP_OBI=0, PULP_SCORE=0, FPU=0):
                                           PC_MRET: io.mepc_i,
                                           PC_URET: io.uepc_i,
                                           PC_DRET: io.depc_i,
-                                          PC_FENCEI: io.pc_id_o + 4,
+                                          PC_FENCEI: io.pc_id_o + U(4),
                                           PC_HWLOOP: io.hwlp_target_i,
                                           ...: CatBits(io.boot_addr_i[31:2], U.w(2)(0))
                                       })
@@ -166,37 +170,52 @@ def if_stage(PULP_XPULP=0, PULP_OBI=0, PULP_SCORE=0, FPU=0):
         branch_req <<= Mux(io.pc_set_i, U.w(1)(1), U.w(1)(0))
         io.if_busy_o <<= prefetch_busy
         io.perf_imiss_o <<= (~fetch_valid) & (~branch_req)
+
         # IF-ID pipeline registers, frozen when the ID stage is stalled
-        with when(~Module.reset):
-            io.instr_valid_id_o <<= U.w(1)(0)
-            io.instr_rdata_id_o <<= U.w(32)(0)
-            io.is_fetch_failed_o <<= U.w(1)(0)
-            io.pc_id_o <<= U.w(32)(0)
-            io.is_compressed_id_o <<= U.w(1)(0)
-            io.illegal_c_insn_id_o <<= U.w(1)(0)
-        with otherwise():
-            with when(if_valid & instr_valid):
-                io.instr_valid_id_o <<= U.w(1)(1)
-                io.instr_rdata_id_o <<= instr_decompressed
-                io.is_compressed_id_o <<= instr_compressed_int
-                io.illegal_c_insn_id_o <<= illegal_c_insn
-                io.is_fetch_failed_o <<= U.w(1)(0)
-                io.pc_id_o <<= io.pc_if_o
-            with elsewhen(io.clear_instr_valid_i):
-                io.instr_valid_id_o <<= U.w(1)(0)
-                io.is_fetch_failed_o <<= fetch_failed
+        instr_valid_id_o = RegInit(Bool(False))
+        instr_rdata_id_o = RegInit(U.w(32)(0))
+        is_fetch_failed_o = RegInit(Bool(False))
+        pc_id_o = RegInit(U.w(32)(0))
+        is_compressed_id_o = RegInit(Bool(False))
+        illegal_c_insn_id_o = RegInit(Bool(False))
+
+        # with when(~Module.reset):
+        #     io.instr_valid_id_o <<= U.w(1)(0)
+        #     io.instr_rdata_id_o <<= U.w(32)(0)
+        #     io.is_fetch_failed_o <<= U.w(1)(0)
+        #     io.pc_id_o <<= U.w(32)(0)
+        #     io.is_compressed_id_o <<= U.w(1)(0)
+        #     io.illegal_c_insn_id_o <<= U.w(1)(0)
+        # with otherwise():
+        with when(if_valid & instr_valid):
+            instr_valid_id_o <<= U.w(1)(1)
+            instr_rdata_id_o <<= instr_decompressed
+            is_compressed_id_o <<= instr_compressed_int
+            illegal_c_insn_id_o <<= illegal_c_insn
+            is_fetch_failed_o <<= U.w(1)(0)
+            pc_id_o <<= io.pc_if_o
+        with elsewhen(io.clear_instr_valid_i):
+            instr_valid_id_o <<= U.w(1)(0)
+            is_fetch_failed_o <<= fetch_failed
+
+        # Connnect to Output
+        io.instr_valid_id_o <<= instr_valid_id_o
+        io.instr_rdata_id_o <<= instr_rdata_id_o
+        io.is_compressed_id_o <<= is_compressed_id_o
+        io.illegal_c_insn_id_o <<= illegal_c_insn_id_o
+        io.is_fetch_failed_o <<= is_fetch_failed_o
+        io.pc_id_o <<= pc_id_o
 
         if_ready <<= fetch_valid & io.id_ready_i
         if_valid <<= (~io.halt_if_i) & if_ready
 
         branch_addr <<= CatBits(branch_addr_n[31:1], U.w(1)(0))
         # prefetch buffer, caches a fiexed number of instructions
-        prefetch_buffer_i = prefetch_buffer(PULP_OBI, PULP_XPULP).io
         prefetch_buffer_i.req_i <<= io.req_i
         prefetch_buffer_i.branch_i <<= branch_req
         prefetch_buffer_i.branch_addr_i <<= branch_addr
-        prefetch_buffer_i.hwlp_jump_i <<= io.hwlp_jump_i
-        prefetch_buffer_i.hwlp_target_i <<= io.hwlp_target_i
+        # prefetch_buffer_i.hwlp_jump_i <<= io.hwlp_jump_i
+        # prefetch_buffer_i.hwlp_target_i <<= io.hwlp_target_i
         prefetch_buffer_i.fetch_ready_i <<= fetch_ready
         fetch_valid <<= prefetch_buffer_i.fetch_valid_o
         fetch_rdata <<= prefetch_buffer_i.fetch_rdata_o
@@ -209,7 +228,6 @@ def if_stage(PULP_XPULP=0, PULP_OBI=0, PULP_SCORE=0, FPU=0):
         prefetch_buffer_i.instr_rdata_i <<= io.instr_rdata_i
         prefetch_busy <<= prefetch_buffer_i.busy_o
 
-        aligner_i = aligner().io
         aligner_i.fetch_valid_i <<= fetch_valid
         aligner_ready <<= aligner_i.aligner_ready_o
         aligner_i.if_valid_i <<= if_valid
@@ -218,11 +236,10 @@ def if_stage(PULP_XPULP=0, PULP_OBI=0, PULP_SCORE=0, FPU=0):
         instr_valid <<= aligner_i.instr_valid_o
         aligner_i.branch_addr_i <<= branch_addr
         aligner_i.branch_i <<= branch_req
-        aligner_i.hwlp_addr_i <<= io.hwlp_target_i
-        aligner_i.hwlp_update_pc_i <<= io.hwlp_jump_i
+        # aligner_i.hwlp_addr_i <<= io.hwlp_target_i
+        # aligner_i.hwlp_update_pc_i <<= io.hwlp_jump_i
         io.pc_if_o <<= aligner_i.pc_o
 
-        compressed_decoder_i = compressed_decoder(FPU).io
         compressed_decoder_i.instr_i <<= instr_aligned
         instr_decompressed <<= compressed_decoder_i.instr_o
         instr_compressed_int <<= compressed_decoder_i.is_compressed_o
@@ -232,4 +249,4 @@ def if_stage(PULP_XPULP=0, PULP_OBI=0, PULP_SCORE=0, FPU=0):
 
 
 if __name__ == '__main__':
-    Emitter.dumpVerilog(Emitter.dump(Emitter.emit(if_stage()), "if_stage.fir"))
+    Emitter.dumpVerilog_nock(Emitter.dump(Emitter.emit(if_stage()), "if_stage.fir"))
