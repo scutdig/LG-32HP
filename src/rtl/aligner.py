@@ -114,10 +114,6 @@ def aligner():
         with when(update_state):
             r_instr_h <<= io.fetch_rdata_i[31:16]
             aligner_ready_q <<= io.aligner_ready_o
-            with when(io.branch_i):
-                # JUMP, BRANCH, SPECIAL JUMP control
-                pc_q <<= io.branch_addr_i
-                state <<= Mux(io.branch_addr_i[1], BRANCH_MISALIGNED, ALIGNED32)
             with when(state == ALIGNED32):
                 with when(io.fetch_rdata_i[1:0] == U.w(2)(3)):
                     state <<= ALIGNED32
@@ -146,6 +142,10 @@ def aligner():
                 with otherwise():
                     state <<= ALIGNED32
                     pc_q <<= pc_plus2
+            with when(io.branch_i):
+                # JUMP, BRANCH, SPECIAL JUMP control
+                pc_q <<= io.branch_addr_i
+                state <<= Mux(io.branch_addr_i[1], BRANCH_MISALIGNED, ALIGNED32)
 
     return ALIGNER()
 

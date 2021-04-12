@@ -181,3 +181,4 @@ if __name__ == '__main__':
     # PREFETCH_BUFFER.pref_ctl.io_fifo_empty_i
     # Please use "firrtl -i prefetch_buffer.fir -o prefetch_buffer.fir.v --no-check-comb-loops"
     Emitter.dumpVerilog_nock(Emitter.dump(Emitter.emit(prefetch_buffer()), "prefetch_buffer.fir"))
+    # Emitter.dumpVerilog(Emitter.dump(Emitter.emit(prefetch_buffer()), "prefetch_buffer.fir"))
