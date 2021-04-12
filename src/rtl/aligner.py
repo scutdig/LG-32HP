@@ -21,16 +21,16 @@ Copyright Digisim, Computer Architecture team of South China University of Techn
 
 from pyhcl import *
 
-# aligner stage parameter
-ALIGNED32 = U.w(3)(0)
-MISALIGNED32 = U.w(3)(1)
-MISALIGNED16 = U.w(3)(2)
-BRANCH_MISALIGNED = U.w(3)(3)
-WAIT_VALID_BRANCH = U.w(3)(4)
-
 
 def aligner():
     class ALIGNER(Module):
+        # aligner stage local parameter
+        ALIGNED32 = U.w(3)(0)
+        MISALIGNED32 = U.w(3)(1)
+        MISALIGNED16 = U.w(3)(2)
+        BRANCH_MISALIGNED = U.w(3)(3)
+        WAIT_VALID_BRANCH = U.w(3)(4)
+
         io = IO(
             fetch_valid_i=Input(Bool),
             aligner_ready_o=Output(Bool),  # prevents overwriting the fetched instruction
@@ -114,10 +114,6 @@ def aligner():
         with when(update_state):
             r_instr_h <<= io.fetch_rdata_i[31:16]
             aligner_ready_q <<= io.aligner_ready_o
-            with when(io.branch_i):
-                # JUMP, BRANCH, SPECIAL JUMP control
-                pc_q <<= io.branch_addr_i
-                state <<= Mux(io.branch_addr_i[1], BRANCH_MISALIGNED, ALIGNED32)
             with when(state == ALIGNED32):
                 with when(io.fetch_rdata_i[1:0] == U.w(2)(3)):
                     state <<= ALIGNED32
@@ -146,6 +142,10 @@ def aligner():
                 with otherwise():
                     state <<= ALIGNED32
                     pc_q <<= pc_plus2
+            with when(io.branch_i):
+                # JUMP, BRANCH, SPECIAL JUMP control
+                pc_q <<= io.branch_addr_i
+                state <<= Mux(io.branch_addr_i[1], BRANCH_MISALIGNED, ALIGNED32)
 
     return ALIGNER()
 
