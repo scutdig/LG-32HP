@@ -174,6 +174,30 @@ PRIV_LVL_S = U.w(2)(0b01)
 PRIV_LVL_U = U.w(2)(0b00)
 
 ##################################################################################
+# IF Stage
+##################################################################################
+# PC mux selector defines
+PC_BOOT      = U.w(4)(0)
+PC_FENCEI    = U.w(4)(1)
+PC_JUMP      = U.w(4)(2)
+PC_BRANCH    = U.w(4)(3)
+PC_EXCEPTION = U.w(4)(4)
+PC_MRET      = U.w(4)(5)
+PC_URET      = U.w(4)(6)
+PC_DRET      = U.w(4)(7)
+
+# Trap mux selector
+TRAP_MACHINE = U.w(2)(0)
+TRAP_USER    = U.w(2)(1)
+
+# EXception PC mux selector defines
+EXC_PC_EXCEPTION = U.w(3)(0)
+EXC_PC_IRQ       = U.w(3)(1)
+EXC_PC_DBD       = U.w(3)(2)
+EXC_PC_DBE       = U.w(3)(3)
+
+
+##################################################################################
 # ID Stage
 ##################################################################################
 # forwarding operand mux

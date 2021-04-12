@@ -45,7 +45,7 @@ def fifo(FALL_THROUGH=0, DATA_WIDTH=32, DEPTH=8):
             # status flags
             full_o=Output(Bool),            # queue is full
             empty_o=Output(Bool),           # queue is empty
-            cnt_o=Output(U.w(ADDR_DEPTH)),  # FIFO counter
+            cnt_o=Output(U.w(ADDR_DEPTH+1)),  # FIFO counter
 
             # The queue is not full, push new data
             data_i=Input(U.w(DATA_WIDTH)),  # data to push into the queue
@@ -71,6 +71,10 @@ def fifo(FALL_THROUGH=0, DATA_WIDTH=32, DEPTH=8):
         mem_q = Reg(Vec(FIFO_DEPTH, U.w(DATA_WIDTH)))
         mem_n = Wire(Vec(FIFO_DEPTH, U.w(DATA_WIDTH)))
 
+        # keep data_i
+        data_in = Reg(U.w(DATA_WIDTH))
+        data_in <<= io.data_i
+
         io.cnt_o <<= status_cnt_q
 
         # Status flags
@@ -79,7 +83,7 @@ def fifo(FALL_THROUGH=0, DATA_WIDTH=32, DEPTH=8):
             io.full_o <<= ~io.pop_i
         else:
             io.empty_o <<= (status_cnt_q == U(0)) & (~(U.w(1)(FALL_THROUGH) & io.push_i))
-            io.full_o <<= (status_cnt_q[ADDR_DEPTH-1:0] == U(FIFO_DEPTH))
+            io.full_o <<= (status_cnt_q[ADDR_DEPTH:0] == U(FIFO_DEPTH))
 
         # Read and write the queue logic
         read_pointer_n <<= read_pointer_q
@@ -92,7 +96,7 @@ def fifo(FALL_THROUGH=0, DATA_WIDTH=32, DEPTH=8):
         # Push a new element to the queue
         with when(io.push_i & (~io.full_o)):
             # Push the data onto the queue
-            mem_n[write_pointer_q] <<= io.data_i
+            mem_n[write_pointer_q] <<= data_in
             # Un-gate the clock, we want to write something
             gate_clock <<= U.w(1)(0)
             # Increment the write counter
@@ -126,12 +130,16 @@ def fifo(FALL_THROUGH=0, DATA_WIDTH=32, DEPTH=8):
                 write_pointer_n <<= write_pointer_q
 
         # Sequential process
-        with when(io.flush_i & (~io.flush_but_first_i)):
+        with when(Module.reset):
+            read_pointer_q <<= U(0)
+            write_pointer_q <<= U(0)
+            status_cnt_q <<= U(0)
+        with elsewhen(io.flush_i):
             # Flush the FIFO
             read_pointer_q <<= U(0)
             write_pointer_q <<= U(0)
             status_cnt_q <<= U(0)
-        with elsewhen((~io.flush_i) & io.flush_but_first_i):
+        with elsewhen(io.flush_but_first_i):
             # Flush the FIFO but keep the first instruction alive if present
             read_pointer_q <<= Mux(status_cnt_q > U(0), read_pointer_q, U(0))
             write_pointer_q <<= Mux(status_cnt_q > U(0), read_pointer_q + U(1), U(0))
@@ -146,7 +154,9 @@ def fifo(FALL_THROUGH=0, DATA_WIDTH=32, DEPTH=8):
             for i in range(FIFO_DEPTH):
                 mem_q[i] <<= U(0)
         with elsewhen(~gate_clock):
-            mem_q <<= mem_n
+            # mem_q <<= mem_n
+            for i in range(FIFO_DEPTH):
+                mem_q[i] <<= mem_n[i]
 
     return FIFO()
 

@@ -67,7 +67,7 @@ def prefetch_controller(PULP_OBI=0, DEPTH=4):
             fifo_pop_o=Output(Bool),                # POP an instruction from the FIFO
             fifo_flush_o=Output(Bool),              # Flush the FIFO
             fifo_flush_but_first_o=Output(Bool),    # Flush the FIFO, but keep the first instruction if present
-            fifo_cnt_i=Input(U.w(FIFO_ADDR_DEPTH)), # Number of valid items/words in the prefetch FIFO
+            fifo_cnt_i=Input(U.w(FIFO_ADDR_DEPTH + 1)), # Number of valid items/words in the prefetch FIFO
             fifo_empty_i=Input(Bool)                # FIFO is empty
         )
 
@@ -80,16 +80,16 @@ def prefetch_controller(PULP_OBI=0, DEPTH=4):
         next_state = Wire(U.w(1))
 
         # Transaction counter and Next value for cnt_q
-        cnt_q = RegInit(U.w(FIFO_ADDR_DEPTH)(0))
-        next_cnt = Wire(U.w(FIFO_ADDR_DEPTH))
+        cnt_q = RegInit(U.w(FIFO_ADDR_DEPTH + 1)(0))
+        next_cnt = Wire(U.w(FIFO_ADDR_DEPTH + 1))
 
         count_up = Wire(Bool)     # Increment outstanding transaction count by 1 (can happen at same time as count_down)
         count_down = Wire(Bool)   # Decrement outstanding transaction count by 1 (can happen at same time as count_up)
 
         # Response flush counter and Next value for flush_cnt_q
         # To flush speculative responses after branch
-        flush_cnt_q = RegInit(U.w(FIFO_ADDR_DEPTH)(0))
-        next_flush_cnt = Wire(U.w(FIFO_ADDR_DEPTH))
+        flush_cnt_q = RegInit(U.w(FIFO_ADDR_DEPTH + 1)(0))
+        next_flush_cnt = Wire(U.w(FIFO_ADDR_DEPTH + 1))
 
         # Transaction address
         trans_addr_q = RegInit(U.w(32)(0))
@@ -101,7 +101,7 @@ def prefetch_controller(PULP_OBI=0, DEPTH=4):
         # FIFO auxiliary signal
         fifo_valid = Wire(Bool)             # FIFO output valid (if !fifo_empty)
         # FIFO_cnt signal, masked when we are branching to allow a new memory request in that cycle
-        fifo_cnt_masked = Wire(U.w(32))
+        fifo_cnt_masked = Wire(U.w(FIFO_ADDR_DEPTH + 1))
 
         # Deprecated hardware loop signals
 
@@ -232,7 +232,6 @@ def prefetch_controller(PULP_OBI=0, DEPTH=4):
         ##################################################################################
         # Counter (flush_cnt_q, next_flush_cnt) to count responses to be flushed.
         ##################################################################################
-
         next_flush_cnt <<= flush_cnt_q
 
         # Number of outstanding transfers at time of branch equals the number of
