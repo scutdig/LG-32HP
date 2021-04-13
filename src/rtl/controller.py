@@ -200,7 +200,7 @@ def controller():
         debug_force_wakeup_q = RegInit(Bool(False))
         debug_force_wakeup_n = Wire(Bool)
 
-        # debug_req_q = RegInit(Bool(False))      # ungate clock
+        debug_req_q = RegInit(Bool(False))      # ungate clock
         debug_req_pending = Wire(Bool)
 
         # Qualify wfi vs nosleep locally
@@ -816,8 +816,8 @@ def controller():
         # Debug mode
         io.debug_mode_o <<= debug_mode_q
         # TODO: Modify in FIRRTL code
-        # debug_req_pending <<= io.debug_req_i | debug_req_q
-        # io.debug_p_elw_no_sleep_o = debug_mode_q | debug_req_q | io.debug_single_step_i | io.trigger_match_i;
+        debug_req_pending <<= io.debug_req_i | debug_req_q
+        io.debug_p_elw_no_sleep_o <<= debug_mode_q | debug_req_q | io.debug_single_step_i | io.trigger_match_i;
 
         io.debug_wfi_no_sleep_o <<= debug_mode_q | debug_req_pending | io.debug_single_step_i | io.trigger_match_i
 
@@ -844,14 +844,20 @@ def controller():
                     debug_fsm_ns <<= HALTED
                 with otherwise():
                     debug_fsm_ns <<= RUNNING
+            with otherwise():
+                debug_fsm_ns <<= debug_fsm_ns
 
         with elsewhen(debug_fsm_cs == RUNNING):
             with when(debug_mode_n):
                 debug_fsm_ns <<= HALTED
+            with otherwise():
+                debug_fsm_ns <<= debug_fsm_ns
 
         with elsewhen(debug_fsm_cs == HALTED):
             with when(~debug_mode_n):
                 debug_fsm_ns <<= RUNNING
+            with otherwise():
+                debug_fsm_ns <<= debug_fsm_ns
 
         with otherwise():
             debug_fsm_ns <<= HAVERESET
@@ -864,4 +870,4 @@ def controller():
 
 
 if __name__ == '__main__':
-    Emitter.dumpVerilog(Emitter.dump(Emitter.emit(controller()), "controller.fir"))
+    Emitter.dumpVerilog_nock(Emitter.dump(Emitter.emit(controller()), "controller.fir"))

@@ -65,6 +65,11 @@ def ex_stage():
 
             # Output of EX stage pipeline
             regfile_waddr_wb_o=Output(U.w(6)),
+            regfile_we_wb_o=Output(Bool),
+            regfile_wdata_wb_o=Output(U.w(32)),
+
+            # Forwarding ports: to ID stage
+            regfile_alu_waddr_fw_o=Output(U.w(6)),
             regfile_alu_we_fw_o=Output(Bool),
             regfile_alu_wdata_fw_o=Output(U.w(32)),
 
@@ -78,7 +83,7 @@ def ex_stage():
             lsu_err_i=Input(Bool),
 
             ex_ready_o=Output(Bool),
-            ex_valid_i=Output(Bool),
+            ex_valid_o=Output(Bool),
             wb_ready_i=Input(Bool)
         )
         alu_i = alu()
@@ -98,6 +103,9 @@ def ex_stage():
         mult_ready = Wire(Bool)
 
         # ALU write port mux
+        io.regfile_alu_wdata_fw_o <<= U(0)
+        io.regfile_alu_waddr_fw_o <<= U(0)
+        io.regfile_alu_we_fw_o <<= U(0)
         wb_contention <<= U(0)
 
         io.regfile_alu_we_fw_o <<= io.regfile_alu_we_i
@@ -135,7 +143,7 @@ def ex_stage():
         alu_result <<= alu_i.io.result_o
         alu_cmp_result <<= alu_i.io.comparison_result_o
 
-        alu_ready <<= alu_i.io.alu_ready
+        alu_ready <<= alu_i.io.ready_o
         alu_i.io.ex_ready_i <<= io.ex_ready_o
 
         ##################################################################################
@@ -154,8 +162,33 @@ def ex_stage():
 
         mult_result <<= mult_i.io.result_o
 
-        io.mult_multicycle_o <<= mult_i.io.multcycle_o
+        io.mult_multicycle_o <<= mult_i.io.multicycle_o
         mult_ready <<= mult_i.io.ready_o
         mult_i.io.ex_ready_i <<= io.ex_ready_o
 
+        ##################################################################################
+        # In our implementation, we temporary merge WB and EX stage
+        # So we don't use register output for: regfile_waddr_lsu and regfile_we_lsu
+        ##################################################################################
+        regfile_we_lsu <<= Bool(False)
+        regfile_waddr_lsu <<= U(0)
+        with when(io.ex_valid_o):
+            regfile_we_lsu <<= io.regfile_we_i & (~io.lsu_err_i)
+            with when(io.regfile_we_i & (~io.lsu_err_i)):
+                regfile_waddr_lsu <<= io.regfile_waddr_i
+        with elsewhen(io.wb_ready_i):
+            # we are ready for a new instruction, but there is none available,
+            # so we just flush the current one out of the pipe
+            regfile_we_lsu <<= Bool(False)
+
+        # As valid always goes to the right and ready to the left, and we are able
+        # to finish branches without going to the WB stage, ex_valid does not
+        # depend on ex_ready.
+        io.ex_ready_o <<= (alu_ready & mult_ready & io.lsu_ready_ex_i & io.wb_ready_i & (~wb_contention)) | io.branch_in_ex_i
+        io.ex_valid_o <<= (io.alu_en_i | io.mult_en_i | io.csr_access_i | io.lsu_en_i) & (alu_ready & mult_ready & io.lsu_ready_ex_i & io.wb_ready_i)
+
     return EX_STAGE()
+
+
+if __name__ == '__main__':
+    Emitter.dumpVerilog_nock(Emitter.dump(Emitter.emit(ex_stage()), "ex_stage.fir"))
