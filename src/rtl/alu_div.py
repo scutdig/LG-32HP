@@ -84,7 +84,8 @@ def alu_div(C_WIDTH=32, C_LOG_WIDTH=6):
         # Bit swapping
         rev_swp_lst = [Wire(Bool) for _ in range(C_WIDTH)]
         for index in range(C_WIDTH):
-            rev_swp_lst[index] = ResReg_DP[C_WIDTH-1-index]
+            rev_swp_lst[index] <<= ResReg_DP[index]
+        # ResReg_DP_rev <<= CatBits(*rev_swp_lst) means {rev_swp_lst[0], rev_swp_lst[1], ...,rev_swp_lst[31]}
         ResReg_DP_rev <<= CatBits(*rev_swp_lst)
 
         OutMux_D <<= Mux(RemSel_SP, AReg_DP, ResReg_DP_rev)
@@ -93,9 +94,10 @@ def alu_div(C_WIDTH=32, C_LOG_WIDTH=6):
         io.Res_DO <<= Mux(ResInv_SP, (-(OutMux_D.to_sint())).to_uint(), OutMux_D)
 
         # Main Comparator
-        or_red = Wire(Bool)
-        for i in range(C_WIDTH-1, -1, -1):
-            or_red <<= or_red | AReg_DP[i]
+        # the temporary variable or_red should be initialized, and the operator should be "=", nor "<<="
+        or_red = AReg_DP[0]
+        for i in range(C_WIDTH - 1, -1, -1):
+            or_red = or_red | AReg_DP[i]
         ABComp_S <<= ((AReg_DP == BReg_DP) | ((AReg_DP > BReg_DP) ^ CompInv_SP)) & (or_red | io.OpBIsZero_SI)
 
         # Main adder
@@ -104,9 +106,9 @@ def alu_div(C_WIDTH=32, C_LOG_WIDTH=6):
 
         # Counter
         Cnt_DN <<= Mux(LoadEn_S, io.OpBShift_DI, Mux(~CntZero_S, Cnt_DP - U(1), Cnt_DP))
-        cnt_dp_or_red = Wire(Bool)
+        cnt_dp_or_red = Cnt_DP[0]
         for i in range(C_LOG_WIDTH-1, -1, -1):
-            cnt_dp_or_red <<= cnt_dp_or_red | Cnt_DP[i]
+            cnt_dp_or_red = cnt_dp_or_red | Cnt_DP[i]
         CntZero_S <<= ~cnt_dp_or_red
 
         # FSM

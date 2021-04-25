@@ -30,7 +30,7 @@ def register_file(ADDR_WIDTH=5, DATA_WIDTH=32):
     # So FPU, PULP_ZFINX = 0
 
     # Number of integer registers
-    NUM_WORDS = pow(2, ADDR_WIDTH)
+    NUM_WORDS = pow(2, ADDR_WIDTH - 1)
     NUM_TOT_WORDS = NUM_WORDS
 
     class REGISTER_FILE(Module):
@@ -52,18 +52,20 @@ def register_file(ADDR_WIDTH=5, DATA_WIDTH=32):
             # Write port W1
             waddr_a_i=Input(U.w(ADDR_WIDTH)),
             wdata_a_i=Input(U.w(DATA_WIDTH)),
+            we_a_i = Input(U.w(1)),
 
             # Write port W2
             waddr_b_i=Input(U.w(ADDR_WIDTH)),
-            wdata_b_i=Input(U.w(DATA_WIDTH))
+            wdata_b_i=Input(U.w(DATA_WIDTH)),
+            we_b_i = Input(U.w(1))
         )
 
         # Integer register file
         mem = Reg(Vec(NUM_WORDS, U.w(DATA_WIDTH)))
 
         # Masked write addresses
-        waddr_a = Wire(U.w(NUM_TOT_WORDS))
-        waddr_b = Wire(U.w(NUM_TOT_WORDS))
+        waddr_a = Wire(U.w(NUM_WORDS))
+        waddr_b = Wire(U.w(NUM_WORDS))
 
         # Write enable signals for all registers
         we_a_dec = Wire(U.w(NUM_TOT_WORDS))
@@ -85,8 +87,8 @@ def register_file(ADDR_WIDTH=5, DATA_WIDTH=32):
         waddr_b <<= U.w(NUM_TOT_WORDS)(1) << io.waddr_b_i
 
         # Mask
-        we_a_dec <<= U.w(NUM_TOT_WORDS)(pow(2, NUM_TOT_WORDS)-1) & waddr_a
-        we_b_dec <<= U.w(NUM_TOT_WORDS)(pow(2, NUM_TOT_WORDS)-1) & waddr_b
+        we_a_dec <<= Mux(io.we_a_i, U.w(NUM_TOT_WORDS)(pow(2, NUM_TOT_WORDS)-1) & waddr_a, U(0))
+        we_b_dec <<= Mux(io.we_b_i, U.w(NUM_TOT_WORDS)(pow(2, NUM_TOT_WORDS)-1) & waddr_b, U(0))
 
         ##################################################################################
         # -- WRITE: Write operation

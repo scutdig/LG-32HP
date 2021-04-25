@@ -58,13 +58,13 @@ def alu():
         # op_a_rev_arr = [io.operand_a_i[31-i] for i in range(32)]
         op_a_rev_arr = []
         for i in range(32):
-            op_a_rev_arr.append(io.operand_a_i[31-i])
+            op_a_rev_arr.append(io.operand_a_i[i])
         operand_a_rev <<= CatBits(*op_a_rev_arr)
 
         # Bit reverse operand_a_neg for left shifts and bit counting
         op_a_neg_rev_arr = []
         for i in range(32):
-            op_a_neg_rev_arr.append(operand_a_neg[31-i])
+            op_a_neg_rev_arr.append(operand_a_neg[i])
         operand_a_neg_rev <<= CatBits(*op_a_neg_rev_arr)
 
         operand_b_neg = Wire(U.w(32))
@@ -169,7 +169,7 @@ def alu():
         # Bit reverse the shift_right_result for left shifts
         reverse_lst = [Wire(Bool) for _ in range(32)]
         for j in range(32):
-            reverse_lst[j] <<= shift_right_result[31-j]
+            reverse_lst[j] <<= shift_right_result[j]
         shift_left_result <<= CatBits(*reverse_lst)
 
         shift_result <<= Mux(shift_left, shift_left_result, shift_right_result)
@@ -299,8 +299,8 @@ def alu():
             io.result_o <<= io.operand_a_i ^ io.operand_b_i
         with elsewhen((io.operator_i == ALU_ADD) | (io.operator_i == ALU_ADDR) | (io.operator_i == ALU_ADDU) |
                       (io.operator_i == ALU_ADDUR) | (io.operator_i == ALU_SUB) | (io.operator_i == ALU_SUBR) |
-                      (io.operator_i == ALU_SUBUR) | (io.operator_i == ALU_SLL) | (io.operator_i == ALU_SRL) |
-                      (io.operator_i == ALU_SRA) | (io.operator_i == ALU_ROR)):
+                      (io.operator_i == ALU_SUBU) |(io.operator_i == ALU_SUBUR) | (io.operator_i == ALU_SLL) |
+                      (io.operator_i == ALU_SRL) | (io.operator_i == ALU_SRA) | (io.operator_i == ALU_ROR)):
             io.result_o <<= shift_result
         with elsewhen((io.operator_i == ALU_EQ) | (io.operator_i == ALU_NE) | (io.operator_i == ALU_GTU) |
                       (io.operator_i == ALU_GEU) | (io.operator_i == ALU_LTU) | (io.operator_i == ALU_LEU) |

@@ -237,7 +237,7 @@ def controller():
 
         ctrl_fsm_ns <<= ctrl_fsm_cs
 
-        io.ctrl_busy_o <<= Bool(False)
+        io.ctrl_busy_o <<= Bool(True)
 
         io.halt_if_o <<= Bool(False)
         io.halt_id_o <<= Bool(False)
@@ -337,6 +337,7 @@ def controller():
                 io.pc_mux_o <<= PC_EXCEPTION
                 io.exc_pc_mux_o <<= EXC_PC_IRQ
                 io.exc_cause_o <<= io.irq_id_ctrl_i
+                io.csr_irq_sec_o <<= io.irq_sec_ctrl_i
 
                 # IRQ interface
                 io.irq_ack_o <<= Bool(True)
@@ -427,7 +428,7 @@ def controller():
                 with otherwise():
                     with when(io.illegal_insn_i):
                         io.halt_if_o <<= Bool(True)
-                        io.halt_id_o <<= Bool(True)
+                        io.halt_id_o <<= Bool(False)
                         ctrl_fsm_ns <<= Mux(io.id_ready_i, FLUSH_EX, DECODE)
                         illegal_insn_n <<= Bool(True)
                     with otherwise():
@@ -845,19 +846,19 @@ def controller():
                 with otherwise():
                     debug_fsm_ns <<= RUNNING
             with otherwise():
-                debug_fsm_ns <<= debug_fsm_ns
+                debug_fsm_ns <<= HAVERESET
 
         with elsewhen(debug_fsm_cs == RUNNING):
             with when(debug_mode_n):
                 debug_fsm_ns <<= HALTED
             with otherwise():
-                debug_fsm_ns <<= debug_fsm_ns
+                debug_fsm_ns <<= RUNNING
 
         with elsewhen(debug_fsm_cs == HALTED):
             with when(~debug_mode_n):
                 debug_fsm_ns <<= RUNNING
             with otherwise():
-                debug_fsm_ns <<= debug_fsm_ns
+                debug_fsm_ns <<= HALTED
 
         with otherwise():
             debug_fsm_ns <<= HAVERESET
