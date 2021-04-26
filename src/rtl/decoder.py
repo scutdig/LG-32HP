@@ -265,7 +265,6 @@ def decoder(PULP_SECURE=0, USE_PMP=0, DEBUG_TRIGGER_EN=1):
             regfile_alu_we <<= Bool(True)
             # Calculate jump target (= RS1 + I imm)
             io.rega_used_o <<= Bool(True)
-
             with when(io.instr_rdata_i[14:12] != U.w(3)(0)):
                 # funct3 != 0b000
                 ctrl_transfer_insn <<= BRANCH_NONE
@@ -331,7 +330,7 @@ def decoder(PULP_SECURE=0, USE_PMP=0, DEBUG_TRIGGER_EN=1):
         # All Load
         with elsewhen(io.instr_rdata_i[6:0] == OPCODE_LOAD):
             data_req <<= Bool(True)
-            io.regfile_mem_we_o <<= Bool(True)
+            regfile_mem_we <<= Bool(True)
             io.rega_used_o <<= Bool(True)
             io.data_type_o <<= U.w(2)(0b00)     # Read always read word
             # offset from immediate
@@ -386,7 +385,6 @@ def decoder(PULP_SECURE=0, USE_PMP=0, DEBUG_TRIGGER_EN=1):
             io.imm_b_mux_sel_o <<= IMMB_I
             regfile_alu_we <<= Bool(True)
             io.rega_used_o <<= Bool(True)
-
             # funct3
             io.alu_operator_o <<= LookUpTable(io.instr_rdata_i[14:12], {
                 U.w(3)(0b000): ALU_ADD,     # addi
@@ -400,10 +398,10 @@ def decoder(PULP_SECURE=0, USE_PMP=0, DEBUG_TRIGGER_EN=1):
             })
 
             # slli, srli, srai -> funct7 has limits
-            with when((io.instr_rdata_i[14:12] == U.w(3)(0b001)) |
-                      (io.instr_rdata_i[31:25] != U.w(7)(0))):
-                # slli -> imm[11:5] must be 0b00
-                io.illegal_insn_o <<= Bool(True)
+            with when(io.instr_rdata_i[14:12] == U.w(3)(0b001)):
+                with when(io.instr_rdata_i[31:25] != U.w(7)(0)):
+                    # slli -> imm[11:5] must be 0b00
+                    io.illegal_insn_o <<= Bool(True)
 
             with when(io.instr_rdata_i[14:12] == U.w(3)(0b101)):
                 # is srli or srai?
@@ -635,9 +633,9 @@ def decoder(PULP_SECURE=0, USE_PMP=0, DEBUG_TRIGGER_EN=1):
                     with when(csr_op != CSR_OP_READ):
                         csr_illegal <<= Bool(True)
                 with elsewhen((io.instr_rdata_i[31:20] == CSR_MSTATUS) |
-                              (io.instr_rdata_i[31:20] == CSR_MARCHID) |
-                              (io.instr_rdata_i[31:20] == CSR_MIMPID) |
-                              (io.instr_rdata_i[31:20] == CSR_MHARTID)):
+                              (io.instr_rdata_i[31:20] == CSR_MEPC) |
+                              (io.instr_rdata_i[31:20] == CSR_MTVEC) |
+                              (io.instr_rdata_i[31:20] == CSR_MCAUSE)):
                     # These are valid CSR registers
                     # Not illegal, but treat as status CSR for side effect handling
                     io.csr_status_o <<= Bool(True)

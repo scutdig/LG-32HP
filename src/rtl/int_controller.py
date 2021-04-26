@@ -62,18 +62,20 @@ def int_controller(PULP_SECURE=0):
 
         # Wake-up signal based on unregistered IRQ such that wake-up can be caused if no clock is present
         t = io.irq_i & io.mie_bypass_i
+        irq_wu_ctrl_or = t[0]
         # Bit or reduction
-        for i in range(31, -1, -1):
-            io.irq_wu_ctrl_o <<= io.irq_wu_ctrl_o | t[i]
+        for i in range(1, 32):
+            irq_wu_ctrl_or = irq_wu_ctrl_or | t[i]
+        io.irq_wu_ctrl_o <<= irq_wu_ctrl_or
 
         # Global interrupt enable
         global_irq_enable <<= io.m_ie_i
 
         # Request to take interrupt if there is a locally enabled interrupt while interrupts are also enabled globally
-        t_irq_local_qual = Wire(Bool)
+        t_irq_local_qual = irq_local_qual[0]
         # Bit or reduction
-        for i in range(31, -1, -1):
-            t_irq_local_qual <<= t_irq_local_qual | irq_local_qual[i]
+        for i in range(1, 32):
+            t_irq_local_qual = t_irq_local_qual | irq_local_qual[i]
         io.irq_req_ctrl_o <<= t_irq_local_qual & global_irq_enable
 
         # Interrupt Encoder
@@ -101,6 +103,8 @@ def int_controller(PULP_SECURE=0):
             io.irq_id_ctrl_o <<= U.w(5)(23)
         with elsewhen(irq_local_qual[22]):
             io.irq_id_ctrl_o <<= U.w(5)(22)
+        with elsewhen(irq_local_qual[21]):
+            io.irq_id_ctrl_o <<= U.w(5)(21)
         with elsewhen(irq_local_qual[20]):
             io.irq_id_ctrl_o <<= U.w(5)(20)
         with elsewhen(irq_local_qual[19]):

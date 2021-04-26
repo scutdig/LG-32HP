@@ -594,13 +594,13 @@ def id_stage(PULP_SECURE=0, USE_PMP=0, DEBUG_TRIGGER_EN=1):
         rf.io.waddr_a_i <<= io.regfile_waddr_wb_i
         rf.io.wdata_a_i <<= io.regfile_wdata_wb_i
         # TODO: Remember to uncomment this after adding we signal
-        # rf.io.we_a_i <<= io.regfile_we_wb_i
+        rf.io.we_a_i <<= io.regfile_we_wb_i
 
         # Write port b
         rf.io.waddr_b_i <<= io.regfile_alu_waddr_fw_i
         rf.io.wdata_b_i <<= io.regfile_alu_wdata_fw_i
         # TODO: Remember to uncomment this after adding we signal
-        # rf.io.we_b_i <<= io.regfile_alu_we_fw_i
+        rf.io.we_b_i <<= io.regfile_alu_we_fw_i
 
         ##################################################################################
         # Decoder

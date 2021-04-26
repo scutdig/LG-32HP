@@ -220,7 +220,7 @@ def core(NUM_MHPMCOUNTERS=1):
 
         # Mux selector for vectored IRQ PC
         m_exc_vec_pc_mux_id <<= Mux(mtvec_mode == U(0), U(0), exc_cause)
-        u_exc_vec_pc_mux_id <<= Mux(mtvec_mode == U(0), U(0), exc_cause)
+        u_exc_vec_pc_mux_id <<= Mux(utvec_mode == U(0), U(0), exc_cause)
 
         # PULP_SECURE == 0
         irq_sec_i <<= Bool(False)

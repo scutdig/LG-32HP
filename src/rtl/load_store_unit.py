@@ -312,7 +312,7 @@ def load_store_unit(PULP_OBI=0):
                 with when(data_addr_int[1:0] != U.w(2)(0b00)):
                     io.data_misaligned_o <<= Bool(True)
             with elsewhen(io.data_type_ex_i == U.w(2)(0b01)):
-                with when(data_addr_int[1:0] != U.w(2)(0b11)):
+                with when(data_addr_int[1:0] == U.w(2)(0b11)):
                     io.data_misaligned_o <<= Bool(True)
 
         # Generate address from operands

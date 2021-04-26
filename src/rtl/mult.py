@@ -135,6 +135,7 @@ def mult():
             mulh_NS <<= STEP1
             # Here always a 32'b unsigned result (no carry)
         with elsewhen(mulh_CS == STEP1):
+            io.multicycle_o <<= Bool(True)
             # AL*BH is signed iff B is signed
             mulh_signed <<= CatBits(io.short_signed_i[1], U.w(1)(0))
             mulh_subword <<= U.w(2)(0b10)
