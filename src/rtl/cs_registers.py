@@ -80,7 +80,7 @@ def hpmevent(addr):
            (addr == CSR_MHPMEVENT28) | (addr == CSR_MHPMEVENT29) | (addr == CSR_MHPMEVENT30) | (addr == CSR_MHPMEVENT31)
 
 
-def cs_registers():
+def cs_registers(NUM_MHPMCOUNTERS=1):
     # Local parameters
     NUM_HPM_EVENTS = 16
 
@@ -514,5 +514,385 @@ def cs_registers():
         utvec_mode.n.clear()
 
         # case (csr_addr_i)
+
+        with when(io.csr_addr_i == CSR_FFLAGS):
+            with when(csr_we_int):
+                fflags.n <<= U(0)
+        with elsewhen(io.csr_addr_i == CSR_FRM):
+            with when(csr_we_int):
+                frm.n <<= U(0)
+        with elsewhen(io.csr_addr_i == CSR_FCSR):
+            fflags.n <<= U(0)
+            frm.n <<= U(0)
+
+        # mstatus: IE bit
+        with elsewhen(io.csr_addr_i == CSR_MSTATUS):
+            with when(csr_we_int):
+                mstatus.n.uie <<= csr_wdata_int[MSTATUS_UIE_BIT]
+                mstatus.n.mie <<= csr_wdata_int[MSTATUS_MIE_BIT]
+                mstatus.n.upie <<= csr_wdata_int[MSTATUS_UPIE_BIT]
+                mstatus.n.mpie <<= csr_wdata_int[MSTATUS_MPIE_BIT]
+                mstatus.n.mpp <<= csr_wdata_int[MSTATUS_MPP_BIT_HIGH:MSTATUS_MPP_BIT_LOW]
+                mstatus.n.mprv <<= csr_wdata_int[MSTATUS_MPRV_BIT]
+
+        # mie: machine interrupt enable
+        with elsewhen(io.csr_addr_i == CSR_MIE):
+            with when(csr_we_int):
+                mie.n <<= csr_wdata_int & IRQ_MASK
+        # mtvec: machine trap-handler base address
+        with elsewhen(io.csr_addr_i == CSR_MTVEC):
+            with when(csr_we_int):
+                mtvec.n <<= csr_wdata_int[31:8]
+                mtvec_mode.n <<= CatBits(U.w(1)(0), csr_wdata_int[0])
+        # mscratch: machine scratch
+        with elsewhen(io.csr_addr_i == CSR_MSCRATCH):
+            with when(csr_we_int):
+                mscratch.n <<= csr_wdata_int
+        # mepc: exception program counter
+        with elsewhen(io.csr_addr_i == CSR_MEPC):
+            with when(csr_we_int):
+                mepc.n <<= csr_wdata_int & (~U.w(32)(1))
+        # mcause
+        with elsewhen(io.csr_addr_i == CSR_MCAUSE):
+            with when(csr_we_int):
+                mcause.n <<= CatBits(csr_wdata_int[31], csr_wdata_int[4:0])
+
+        with elsewhen(io.csr_addr_i == CSR_DCSR):
+            with when(csr_we_int):
+                # Following are read-only and never assigned here (dcsr_q value is used)
+                #
+                # - xdebugver
+                # - cause
+                # - nmip
+                dcsr.n.ebreakm   <<= csr_wdata_int[15]
+                dcsr.n.ebreaks   <<= U(0)                   # ebreaks (implemented as WARL)
+                dcsr.n.ebreaku   <<= U(0)                   # ebreaku (implemented as WARL)
+                dcsr.n.stepie    <<= csr_wdata_int[11]      # stepie
+                dcsr.n.stopcount <<= U(0)                   # stopcount
+                dcsr.n.stoptime  <<= U(0)                   # stoptime
+                dcsr.n.mprven    <<= U(0)                   # mprven
+                dcsr.n.step      <<= csr_wdata_int[2]
+                dcsr.n.prv       <<= PRIV_LVL_M             # prv (implemented as WARL)
+
+        with elsewhen(io.csr_addr_i == CSR_DPC):
+            with when(csr_we_int):
+                depc.n <<= csr_wdata_int & (~U.w(32)(1))
+
+        with elsewhen(io.csr_addr_i == CSR_DSCRATCH0):
+            with when(csr_we_int):
+                dscratch0.n <<= csr_wdata_int
+
+        with elsewhen(io.csr_addr_i == CSR_DSCRATCH1):
+            with when(csr_we_int):
+                dscratch1.n <<= csr_wdata_int
+
+        # No hardware loops support
+        with otherwise():
+            pass
+
+        # Exception controller gets priority over other writes
+        with when(io.csr_save_cause_i):
+            with when(io.csr_save_if_i):
+                exception_pc <<= io.pc_if_i
+            with elsewhen(io.csr_save_id_i):
+                exception_pc <<= io.pc_id_i
+            with elsewhen(io.csr_save_ex_i):
+                exception_pc <<= io.pc_ex_i
+
+            with when(io.debug_csr_save_i):
+                # All interrupts are masked, don't update cause, epc, tval dpc and mpstatus
+                dcsr.n.prv <<= PRIV_LVL_M
+                dcsr.n.cause <<= io.debug_cause_i
+                depc.n <<= exception_pc
+            with otherwise():
+                priv_lvl.n <<= PRIV_LVL_M
+                mstatus.n.mpie <<= mstatus.q.mie
+                mstatus.n.mie <<= U(0)
+                mstatus.n.mpp <<= PRIV_LVL_M
+                mepc.n <<= exception_pc
+                mcause.n <<= io.csr_cause_i
+
+        with elsewhen(io.csr_restore_mret_i):
+            mstatus.n.mie <<= mstatus.q.mpie
+            priv_lvl.n <<= PRIV_LVL_M
+            mstatus.n.mpie <<= U(1)
+            mstatus.n.mpp <<= PRIV_LVL_M
+
+        with elsewhen(io.csr_restore_dret_i):
+            priv_lvl.n <<= dcsr.q.prv
+
+        # CSR operation logic
+        csr_wdata_int <<= io.csr_wdata_i
+        csr_we_int <<= U.w(1)(1)
+
+        csr_wdata_int <<= LookUpTable(io.csr_op_i, {
+            CSR_OP_WRITE: io.csr_wdata_i,
+            CSR_OP_SET: io.csr_wdata_i | io.csr_rdata_o,
+            CSR_OP_CLEAR: (~io.csr_wdata_i) & io.csr_rdata_o,
+            CSR_OP_READ: io.csr_wdata_i
+        })
+
+        with when(io.csr_op_i == CSR_OP_READ):
+            csr_we_int <<= U.w(1)(0)
+
+        io.csr_rdata_o <<= csr_rdata_int
+
+        # Directly output some registers
+        io.m_irq_enable_o <<= mstatus.q.mie & (~(dcsr.q.step & (~dcsr.q.stepie)))
+        io.u_irq_enable_o <<= mstatus.q.uie & (~(dcsr.q.step & (~dcsr.q.stepie)))
+        io.priv_lvl_o <<= priv_lvl.q
+        io.sec_lvl_o <<= priv_lvl.q[0]
+        io.frm_o <<= U(0)
+
+        io.mtvec_o <<= mtvec.q
+        io.utvec_o <<= utvec.q
+        io.mtvec_mode_o <<= mtvec_mode.q
+        io.utvec_mode_o <<= utvec_mode.q
+
+        io.mepc_o <<= mepc.q
+        io.uepc_o <<= uepc.q
+
+        io.mcounteren_o <<= U(0)
+
+        io.depc_o <<= depc.q
+
+        io.debug_single_step_o <<= dcsr.q.step
+        io.debug_ebreakm_o <<= dcsr.q.ebreakm
+        io.debug_ebreaku_o <<= dcsr.q.ebreaku
+
+        uepc.q <<= U(0)
+        ucause.q <<= U(0)
+        utvec.q <<= U(0)
+        utvec_mode.q <<= U(0)
+        priv_lvl.q <<= PRIV_LVL_M
+
+        # Update CSRs
+        frm.q <<= U(0)
+        fflags.q <<= U(0)
+
+        mstatus.q.uie <<= U(0)
+        mstatus.q.mie <<= mstatus.n.mie
+        mstatus.q.upie <<= U(0)
+        mstatus.q.mpie <<= mstatus.n.mpie
+        mstatus.q.mpp <<= PRIV_LVL_M
+        mstatus.q.mprv <<= U(0)
+
+        mepc.q <<= mepc.n
+        mcause.q <<= mcause.n
+        depc.q <<= depc.n
+        dcsr.q <<= dcsr.n
+        dscratch0.q <<= dscratch0.n
+        dscratch1.q <<= dscratch1.n
+        mscratch.q <<= mscratch.n
+        mie.q <<= mie.n
+        mtvec.q <<= mtvec.n
+        mtvec_mode.q <<= mtvec_mode.n
+
+        ##################################################################################
+        # Debug Trigger
+        ##################################################################################
+        # Register values
+        tmatch_control_exec_q = RegInit(Bool(False))
+        tmatch_value_q = RegInit(U.w(32)(0))
+        # Write enables
+        tmatch_control_we = Wire(Bool)
+        tmatch_value_we = Wire(Bool)
+
+        # Write select
+        tmatch_control_we <<= csr_we_int & io.debug_mode_i & (io.csr_addr_i == CSR_TDATA1)
+        tmatch_value_we <<= csr_we_int & io.debug_mode_i & (io.csr_addr_i == CSR_TDATA2)
+
+        # Registers
+        with when(tmatch_control_we):
+            tmatch_control_exec_q <<= csr_wdata_int[2]
+        with when(tmatch_value_we):
+            tmatch_value_q <<= csr_wdata_int[31:0]
+
+        # All supported trigger types
+        tinfo_types <<= 1 << TTYPE_MCONTROL
+
+        # Assign read data
+        # TDATA0 - only support simple address matching
+        tmatch_control_rdata <<= CatBits(
+            TTYPE_MCONTROL,                 # type      : address/data match
+            U.w(1)(1),                      # dmode     : access from D mode only
+            U.w(6)(0x00),                   # maskmax   : exact match only
+            U.w(1)(0),                      # hit       : not supported
+            U.w(1)(0),                      # select    : address match only
+            U.w(1)(0),                      # timing    : match before execution
+            U.w(2)(0),                      # sizelo    : match any access
+            U.w(4)(0x1),                    # action    : enter debug mode
+            U.w(1)(0),                      # chain     : not supported
+            U.w(4)(0x0),                    # match     : simple match
+            U.w(1)(1),                      # m         : match in m-mode
+            U.w(1)(0),                      # 0         : zero
+            U.w(1)(0),                      # s         : not supported
+            U.w(1)(0),                      # u         : match in u-mode
+            tmatch_control_exec_q,          # execute   : match in instruction address
+            U.w(1)(0),                      # store     : not supported
+            U.w(1)(0)                       # load      : not supported
+        )
+
+        # TDATA1 - address match value only
+        tmatch_value_rdata <<= tmatch_value_q
+
+        # Breakpoint matching
+        # We match against the next address, as the breakpoint must be taken before execution
+        io.trigger_match_o <<= tmatch_control_exec_q & (io.pc_id_i[31:0] == tmatch_value_q[31:0])
+
+        ##################################################################################
+        # Perf. Counter
+        ##################################################################################
+
+        # -----------------------------
+        # Events to count
+        hpm_events <<= CatBits(
+            U.w(1)(1),                                  # cycle counter
+            io.mhpmevent_minstret_i,                    # instruction counter
+            io.mhpmevent_ld_stall_i,                    # nr of load use hazards
+            io.mhpmevent_jr_stall_i,                    # nr of jump register hazards
+            io.mhpmevent_imiss_i,                       # cycles waiting for instruction fetches, excluding jumps and branches
+            io.mhpmevent_load_i,                        # nr of loads
+            io.mhpmevent_store_i,                       # nr of stores
+            io.mhpmevent_jump_i,                        # nr of jumps (unconditional)
+            io.mhpmevent_branch_i,                      # nr of branches (conditional)
+            io.mhpmevent_branch_taken_i,                # nr of taken branches (conditional)
+            io.mhpmevent_compressed_i,                  # compressed instruction counter
+            U.w(5)(0)
+        )
+
+        # -----------------------------
+        # address decoder for performance counter registers
+        mcounteren_we, mcountinhibit_we, mhpmevent_we = [Wire(Bool) for _ in range(3)]
+        mcounteren_we       <<= csr_we_int & (  io.csr_addr_i == CSR_MCOUNTEREN)
+        mcountinhibit_we    <<= csr_we_int & (  io.csr_addr_i == CSR_MCOUNTINHIBIT)
+        mhpmevent_we        <<= csr_we_int & ( (io.csr_addr_i == CSR_MHPMEVENT3  ) |
+                                               (io.csr_addr_i == CSR_MHPMEVENT4  ) |
+                                               (io.csr_addr_i == CSR_MHPMEVENT5  ) |
+                                               (io.csr_addr_i == CSR_MHPMEVENT6  ) |
+                                               (io.csr_addr_i == CSR_MHPMEVENT7  ) |
+                                               (io.csr_addr_i == CSR_MHPMEVENT8  ) |
+                                               (io.csr_addr_i == CSR_MHPMEVENT9  ) |
+                                               (io.csr_addr_i == CSR_MHPMEVENT10 ) |
+                                               (io.csr_addr_i == CSR_MHPMEVENT11 ) |
+                                               (io.csr_addr_i == CSR_MHPMEVENT12 ) |
+                                               (io.csr_addr_i == CSR_MHPMEVENT13 ) |
+                                               (io.csr_addr_i == CSR_MHPMEVENT14 ) |
+                                               (io.csr_addr_i == CSR_MHPMEVENT15 ) |
+                                               (io.csr_addr_i == CSR_MHPMEVENT16 ) |
+                                               (io.csr_addr_i == CSR_MHPMEVENT17 ) |
+                                               (io.csr_addr_i == CSR_MHPMEVENT18 ) |
+                                               (io.csr_addr_i == CSR_MHPMEVENT19 ) |
+                                               (io.csr_addr_i == CSR_MHPMEVENT20 ) |
+                                               (io.csr_addr_i == CSR_MHPMEVENT21 ) |
+                                               (io.csr_addr_i == CSR_MHPMEVENT22 ) |
+                                               (io.csr_addr_i == CSR_MHPMEVENT23 ) |
+                                               (io.csr_addr_i == CSR_MHPMEVENT24 ) |
+                                               (io.csr_addr_i == CSR_MHPMEVENT25 ) |
+                                               (io.csr_addr_i == CSR_MHPMEVENT26 ) |
+                                               (io.csr_addr_i == CSR_MHPMEVENT27 ) |
+                                               (io.csr_addr_i == CSR_MHPMEVENT28 ) |
+                                               (io.csr_addr_i == CSR_MHPMEVENT29 ) |
+                                               (io.csr_addr_i == CSR_MHPMEVENT30 ) |
+                                               (io.csr_addr_i == CSR_MHPMEVENT31 ))
+        # -----------------------------
+        # Increment value for performance counters
+        for incr_gidx in range(32):
+            mhpmcounter_increment[incr_gidx] <<= mhpmcounter_q[incr_gidx] + U(1)
+
+        # -----------------------------
+        # next value for performance counters and control regsiters
+        mcounteren.n <<= mcounteren.q
+        mcountinhibit.n <<= mcountinhibit.q
+        mhpmevent.n <<= mhpmevent.q
+
+        # No user mode enable
+
+        # Inhibit Control
+        with when(mcountinhibit_we):
+            mcountinhibit.n <<= csr_wdata_int
+
+        # Event Control
+        with when(mhpmevent_we):
+            mhpmevent.n[io.csr_addr_i[4:0]] <<= csr_wdata_int
+
+        mhpmcounter_write_lower_arr = [Wire(Bool) for _ in range(32)]
+        mhpmcounter_write_upper_arr = [Wire(Bool) for _ in range(32)]
+        mhpmcounter_write_increment_arr = [Wire(Bool) for _ in range(32)]
+
+        for wcnt_gidx in range(32):
+            # Write lower counter bits
+            mhpmcounter_write_lower_arr[wcnt_gidx] <<= csr_we_int & (io.csr_addr_i == (CSR_MCYCLE + U(wcnt_gidx)))
+            mhpmcounter_write_lower <<= CatBits(*mhpmcounter_write_lower_arr)
+
+            # Write upper counter bits
+            mhpmcounter_write_upper_arr[wcnt_gidx] <<= (~mhpmcounter_write_lower[wcnt_gidx]) & csr_we_int & (io.csr_addr_i == (CSR_MCYCLEH + wcnt_gidx))
+            mhpmcounter_write_upper <<= CatBits(*mhpmcounter_write_upper_arr)
+
+            if wcnt_gidx == 0:
+                # mcycle = mhpmcounter[0] : count every cycle (if not inhibited)
+                mhpmcounter_write_increment_arr[wcnt_gidx] <<= (~mhpmcounter_write_lower[wcnt_gidx]) & \
+                                                               (~mhpmcounter_write_upper[wcnt_gidx]) & \
+                                                               (~mcountinhibit.q[wcnt_gidx])
+            elif wcnt_gidx == 2:
+                # minstret = mhpmcounter[2] : count every retired instruction (if not inhibited)
+                mhpmcounter_write_increment_arr[wcnt_gidx] <<= (~mhpmcounter_write_lower[wcnt_gidx]) & \
+                                                               (~mhpmcounter_write_upper[wcnt_gidx]) & \
+                                                               (~mcountinhibit.q[wcnt_gidx]) & \
+                                                               hpm_events[1]
+            elif 2 < wcnt_gidx < (NUM_MHPMCOUNTERS + 3):
+                reduce_tmp = hpm_events & mhpmevent.q[wcnt_gidx][NUM_HPM_EVENTS-1:0]
+                reduce_res = Wire(Bool)
+                reduce_res <<= reduce_tmp[NUM_HPM_EVENTS-1]
+                for i in range(NUM_HPM_EVENTS-2, -1, -1):
+                    reduce_res <<= reduce_res | reduce_tmp[i]
+                mhpmcounter_write_increment_arr[wcnt_gidx] <<= (~mhpmcounter_write_lower[wcnt_gidx]) & \
+                                                               (~mhpmcounter_write_upper[wcnt_gidx]) & \
+                                                               (~mcountinhibit.q[wcnt_gidx]) & reduce_res
+            else:
+                mhpmcounter_write_increment_arr[wcnt_gidx] <<= Bool(False)
+
+            mhpmcounter_write_increment <<= CatBits(*mhpmcounter_write_increment_arr)
+
+        # -----------------------------
+        # HPM Registers
+        #   Counter Registers: mhpcounter_q[]
+        for cnt_gidx in range(32):
+            # mcyclce  is located at index 0
+            # there is no counter at index 1
+            # minstret is located at index 2
+            # Programable HPM counters start at index 3
+            if cnt_gidx == 1 or cnt_gidx >= (NUM_MHPMCOUNTERS + 3):
+                mhpmcounter_q[cnt_gidx] <<= U(0)
+            else:
+                with when(mhpmcounter_write_lower[cnt_gidx]):
+                    mhpmcounter_q[cnt_gidx][31:0] <<= csr_wdata_int
+                with elsewhen(mhpmcounter_write_upper[cnt_gidx]):
+                    mhpmcounter_q[cnt_gidx][63:32] <<= csr_wdata_int
+                with elsewhen(mhpmcounter_write_increment[cnt_gidx]):
+                    mhpmcounter_q[cnt_gidx] <<= mhpmcounter_increment[cnt_gidx]
+
+        #   Event Register: mhpevent_q[]
+        for evt_gidx in range(32):
+            # programable HPM events start at index3
+            if evt_gidx < 3 or evt_gidx >= (NUM_MHPMCOUNTERS + 3):
+                mhpmevent.q[evt_gidx] <<= U(0)
+            else:
+                if NUM_HPM_EVENTS < 32:
+                    mhpmevent.q[evt_gidx][31:NUM_HPM_EVENTS] <<= U(0)
+                mhpmevent.q[evt_gidx][NUM_HPM_EVENTS-1:0] <<= mhpmevent.n[evt_gidx][NUM_HPM_EVENTS-1:0]
+
+        #   Enable Register: mcounteren_q
+        #   Not implement
+        for en_gidx in range(32):
+            mcounteren.q[en_gidx] <<= U(0)
+
+        #   Inhibit Register: mcountinhibit_q
+        #   Note: implemented ocunters are disabled out of reset to save power
+        for inh_gidx in range(32):
+            if inh_gidx == 1 or inh_gidx >= (NUM_MHPMCOUNTERS + 3):
+                mcountinhibit.q[inh_gidx] <<= U(0)
+            else:
+                mcountinhibit.q[inh_gidx] <<= mcountinhibit.n[inh_gidx]
 
     return CS_REGISTERS()
