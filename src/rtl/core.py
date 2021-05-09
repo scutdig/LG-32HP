@@ -24,6 +24,7 @@ from src.rtl.if_stage import *
 from src.rtl.id_stage import *
 from src.rtl.ex_stage import *
 from src.rtl.load_store_unit import *
+from src.rtl.cs_registers import *
 
 
 def core(NUM_MHPMCOUNTERS=1):
@@ -74,6 +75,7 @@ def core(NUM_MHPMCOUNTERS=1):
         id_stage_i = id_stage().io
         ex_stage_i = ex_stage().io
         load_store_unit_i = load_store_unit().io
+        cs_registers_i = cs_registers().io
 
         irq_sec_i = Wire(Bool)
         sec_lvl_o = Wire(Bool)
@@ -570,30 +572,69 @@ def core(NUM_MHPMCOUNTERS=1):
         ##################################################################################
         # CSR
         ##################################################################################
-        # Not implement yet
-        mtvec <<= U(0)
-        utvec <<= U(0)
-        mtvec_mode <<= U(0)
-        utvec_mode <<= U(0)
+        cs_registers_i.hart_id_i <<= io.hart_id_i
 
-        csr_rdata <<= U(0)
+        mtvec <<= cs_registers_i.mtvec_o
+        utvec <<= cs_registers_i.utvec_o
+        mtvec_mode <<= cs_registers_i.mtvec_mode_o
+        utvec_mode <<= cs_registers_i.utvec_mode_o
+        cs_registers_i.mtvec_addr_i <<= io.mtvec_addr_i[31:0]
+        cs_registers_i.csr_mtvec_init_i <<= csr_mtvec_init
+        cs_registers_i.csr_addr_i <<= csr_addr
+        cs_registers_i.csr_wdata_i <<= csr_wdata
+        cs_registers_i.csr_op_i <<= csr_op
+        csr_rdata <<= cs_registers_i.csr_rdata_o
 
-        mie_bypass <<= U(0)
-        m_irq_enable <<= U(0)
-        u_irq_enable <<= U(0)
-        sec_lvl_o <<= U(0)
-        mepc <<= U(0)
-        uepc <<= U(0)
+        cs_registers_i.fflags_i <<= U(0)
+        cs_registers_i.fflags_we_i <<= U(0)
 
-        mcounteren <<= U(0)
+        mie_bypass <<= cs_registers_i.mie_bypass_o
+        cs_registers_i.mip_i <<= mip
+        m_irq_enable <<= cs_registers_i.m_irq_enable_o
+        u_irq_enable <<= cs_registers_i.u_irq_enable_o
+        cs_registers_i.csr_irq_sec_i <<= csr_irq_sec
+        sec_lvl_o <<= cs_registers_i.sec_lvl_o
+        mepc <<= cs_registers_i.mepc_o
+        uepc <<= cs_registers_i.uepc_o
 
-        depc <<= U(0)
-        debug_sigle_Step <<= U(0)
-        debug_ebreakm <<= U(0)
-        debug_ebreaku <<= U(0)
-        trigger_match <<= U(0)
+        mcounteren <<= cs_registers_i.mcounteren_o
 
-        current_priv_lvl <<= U(0)
+        cs_registers_i.debug_mode_i <<= debug_mode
+        cs_registers_i.debug_cause_i <<= debug_cause
+        cs_registers_i.debug_csr_save_i <<= debug_csr_save
+        depc <<= cs_registers_i.depc_o
+        debug_sigle_Step <<= cs_registers_i.debug_single_step_o
+        debug_ebreakm <<= cs_registers_i.debug_ebreakm_o
+        debug_ebreaku <<= cs_registers_i.debug_ebreaku_o
+        trigger_match <<= cs_registers_i.trigger_match_o
+
+        current_priv_lvl <<= cs_registers_i.priv_lvl_o
+
+        cs_registers_i.pc_if_i <<= pc_if
+        cs_registers_i.pc_id_i <<= pc_id
+        cs_registers_i.pc_ex_i <<= pc_ex
+
+        cs_registers_i.csr_save_if_i <<= csr_save_if
+        cs_registers_i.csr_save_id_i <<= csr_save_id
+        cs_registers_i.csr_save_ex_i <<= csr_save_ex
+        cs_registers_i.csr_restore_mret_i <<= csr_restore_mret_id
+        cs_registers_i.csr_restore_uret_i <<= csr_restore_uret_id
+        cs_registers_i.csr_restore_dret_i <<= csr_restore_dret_id
+
+        cs_registers_i.csr_cause_i <<= csr_cause
+        cs_registers_i.csr_save_cause_i <<= csr_save_cause
+
+        cs_registers_i.mhpmevent_minstret_i <<= mhpmevent_minstret    
+        cs_registers_i.mhpmevent_load_i <<= mhpmevent_load        
+        cs_registers_i.mhpmevent_store_i <<= mhpmevent_store       
+        cs_registers_i.mhpmevent_jump_i <<= mhpmevent_jump        
+        cs_registers_i.mhpmevent_branch_i <<= mhpmevent_branch      
+        cs_registers_i.mhpmevent_branch_taken_i <<= mhpmevent_branch_taken
+        cs_registers_i.mhpmevent_compressed_i <<= mhpmevent_compressed  
+        cs_registers_i.mhpmevent_jr_stall_i <<= mhpmevent_jr_stall    
+        cs_registers_i.mhpmevent_imiss_i <<= mhpmevent_imiss       
+        cs_registers_i.mhpmevent_ld_stall_i <<= mhpmevent_ld_stall    
+        cs_registers_i.mhpmevent_pipe_stall_i <<= mhpmevent_pipe_stall  
 
         csr_addr <<= csr_addr_int
         csr_wdata <<= alu_operand_a_ex

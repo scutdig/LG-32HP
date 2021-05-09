@@ -80,6 +80,33 @@ def hpmevent(addr):
            (addr == CSR_MHPMEVENT28) | (addr == CSR_MHPMEVENT29) | (addr == CSR_MHPMEVENT30) | (addr == CSR_MHPMEVENT31)
 
 
+def con_status_t(l, r):
+    l.uie <<= r.uie
+    l.mie <<= r.mie
+    l.upie <<= r.upie
+    l.mpie <<= r.mpie
+    l.mpp <<= r.mpp
+    l.mprv <<= r.mprv
+
+
+def con_dcsr_t(l, r):
+    l.xdebugver <<= r.xdebugver
+    l.zero2 <<= r.zero2
+    l.ebreakm <<= r.ebreakm
+    l.zero1 <<= r.zero1
+    l.ebreaks <<= r.ebreaks
+    l.ebreaku <<= r.ebreaku
+    l.stepie <<= r.stepie
+    l.stopcount <<= r.stopcount
+    l.stoptime <<= r.stoptime
+    l.cause <<= r.cause
+    l.zero0 <<= r.zero0
+    l.mprven <<= r.mprven
+    l.nmip <<= r.nmip
+    l.step <<= r.step
+    l.prv <<= r.prv
+
+
 def cs_registers(NUM_MHPMCOUNTERS=1):
     # Local parameters
     NUM_HPM_EVENTS = 16
@@ -160,13 +187,13 @@ def cs_registers(NUM_MHPMCOUNTERS=1):
                 self.mpp = Wire(U.w(PRIV_SEL_WIDTH))
                 self.mprv = Wire(Bool)
 
-        def __ilshift__(self, other):
-            self.uie <<= other.uie
-            self.mie <<= other.uie
-            self.upie <<= other.upie
-            self.mpie <<= other.mpie
-            self.mpp <<= other.mpp
-            self.mprv <<= other.mprv
+        # def __ilshift__(self, other):
+        #     self.uie <<= other.uie
+        #     self.mie <<= other.mie
+        #     self.upie <<= other.upie
+        #     self.mpie <<= other.mpie
+        #     self.mpp <<= other.mpp
+        #     self.mprv <<= other.mprv
 
         def clear(self):
             self.uie <<= U(0)
@@ -215,22 +242,22 @@ def cs_registers(NUM_MHPMCOUNTERS=1):
                 self.step = Wire(Bool)
                 self.prv = Wire(U.w(PRIV_SEL_WIDTH))
 
-        def __ilshift__(self, other):
-            self.xdebugver <<= other.xdebugver
-            self.zero2 <<= other.zero2
-            self.ebreakm <<= other.ebreakm
-            self.zero1 <<= other.zero1
-            self.ebreaks <<= other.ebreaks
-            self.ebreaku <<= other.ebreau
-            self.stepie <<= other.stepie
-            self.stopcount <<= other.stopcount
-            self.stoptime <<= other.stoptime
-            self.cause <<= other.cause
-            self.zero0 <<= other.zero0
-            self.mprven <<= other.mprven
-            self.nmip <<= other.nmip
-            self.step <<= other.step
-            self.prv <<= other.prv
+        # def __ilshift__(self, other):
+        #     self.xdebugver <<= other.xdebugver
+        #     self.zero2 <<= other.zero2
+        #     self.ebreakm <<= other.ebreakm
+        #     self.zero1 <<= other.zero1
+        #     self.ebreaks <<= other.ebreaks
+        #     self.ebreaku <<= other.ebreaku
+        #     self.stepie <<= other.stepie
+        #     self.stopcount <<= other.stopcount
+        #     self.stoptime <<= other.stoptime
+        #     self.cause <<= other.cause
+        #     self.zero0 <<= other.zero0
+        #     self.mprven <<= other.mprven
+        #     self.nmip <<= other.nmip
+        #     self.step <<= other.step
+        #     self.prv <<= other.prv
 
         def clear(self):
             self.xdebugver <<= U(0)
@@ -350,7 +377,8 @@ def cs_registers(NUM_MHPMCOUNTERS=1):
         # Debug
         dcsr = gen_packed_ff(Dcsr_t(True), Dcsr_t(False))
         depc = gen_ff(32, 0)
-        dscratch0, dscratch1 = [gen_ff(32, 0) for _ in range(2)]
+        dscratch0 = gen_ff(32, 0)
+        dscratch1 = gen_ff(32, 0)
         mscratch = gen_ff(32, 0)
 
         exception_pc = Wire(U.w(32))
@@ -457,7 +485,7 @@ def cs_registers(NUM_MHPMCOUNTERS=1):
             csr_rdata_int <<= U(0)
         with elsewhen(io.csr_addr_i == CSR_MCOUNTEREN):
             # mcounteren: Machine Counter-Enable
-            csr_rdata_int <<= mhpmcounter_q
+            csr_rdata_int <<= mcounteren.q
         with elsewhen((io.csr_addr_i == CSR_TSELECT) | (io.csr_addr_i == CSR_TDATA3) |
                       (io.csr_addr_i == CSR_MCONTEXT) | (io.csr_addr_i == CSR_SCONTEXT)):
             csr_rdata_int <<= U(0)      # Always read 0
@@ -468,7 +496,10 @@ def cs_registers(NUM_MHPMCOUNTERS=1):
         with elsewhen(io.csr_addr_i == CSR_TINFO):
             csr_rdata_int <<= tinfo_types
         with elsewhen(io.csr_addr_i == CSR_DCSR):
-            csr_rdata_int <<= dcsr.q
+            csr_rdata_int <<= CatBits(dcsr.q.xdebugver, dcsr.q.zero2, dcsr.q.ebreakm, dcsr.q.zero1,
+                                      dcsr.q.ebreaks, dcsr.q.ebreaku, dcsr.q.stepie, dcsr.q.stopcount,
+                                      dcsr.q.stoptime, dcsr.q.cause, dcsr.q.zero0, dcsr.q.mprven,
+                                      dcsr.q.nmip, dcsr.q.step, dcsr.q.prv)
         with elsewhen(io.csr_addr_i == CSR_DPC):
             csr_rdata_int <<= depc.q
         with elsewhen(io.csr_addr_i == CSR_DSCRATCH0):
@@ -497,13 +528,16 @@ def cs_registers(NUM_MHPMCOUNTERS=1):
         mepc.n <<= mepc.q
         uepc.n <<= U(0)
         depc.n <<= depc.q
-        dcsr.n <<= dcsr.q
+        # dcsr.n <<= dcsr.q
+        con_dcsr_t(dcsr.n, dcsr.q)
         dscratch0.n <<= dscratch0.q
         dscratch1.n <<= dscratch1.q
 
-        mstatus.n <<= mstatus.q
+        # mstatus.n <<= mstatus.q  # It seems like some wrong when using override operator
+        con_status_t(mstatus.n, mstatus.q)
+
         mcause.n <<= mcause.q
-        ucause.n.clear()
+        ucause.n <<= U(0)
         exception_pc <<= io.pc_id_i
         priv_lvl.n <<= priv_lvl.q
         mtvec.n <<= Mux(io.csr_mtvec_init_i, io.mtvec_addr_i[31:8], mtvec.q)
@@ -511,7 +545,7 @@ def cs_registers(NUM_MHPMCOUNTERS=1):
 
         mie.n <<= mie.q
         mtvec_mode.n <<= mtvec_mode.q
-        utvec_mode.n.clear()
+        utvec_mode.n <<= U(0)
 
         # case (csr_addr_i)
 
@@ -586,10 +620,6 @@ def cs_registers(NUM_MHPMCOUNTERS=1):
             with when(csr_we_int):
                 dscratch1.n <<= csr_wdata_int
 
-        # No hardware loops support
-        with otherwise():
-            pass
-
         # Exception controller gets priority over other writes
         with when(io.csr_save_cause_i):
             with when(io.csr_save_if_i):
@@ -629,7 +659,8 @@ def cs_registers(NUM_MHPMCOUNTERS=1):
             CSR_OP_WRITE: io.csr_wdata_i,
             CSR_OP_SET: io.csr_wdata_i | io.csr_rdata_o,
             CSR_OP_CLEAR: (~io.csr_wdata_i) & io.csr_rdata_o,
-            CSR_OP_READ: io.csr_wdata_i
+            CSR_OP_READ: io.csr_wdata_i,
+            ...: io.csr_wdata_i
         })
 
         with when(io.csr_op_i == CSR_OP_READ):
@@ -680,7 +711,7 @@ def cs_registers(NUM_MHPMCOUNTERS=1):
         mepc.q <<= mepc.n
         mcause.q <<= mcause.n
         depc.q <<= depc.n
-        dcsr.q <<= dcsr.n
+        con_dcsr_t(dcsr.q, dcsr.n)
         dscratch0.q <<= dscratch0.n
         dscratch1.q <<= dscratch1.n
         mscratch.q <<= mscratch.n
@@ -709,7 +740,7 @@ def cs_registers(NUM_MHPMCOUNTERS=1):
             tmatch_value_q <<= csr_wdata_int[31:0]
 
         # All supported trigger types
-        tinfo_types <<= 1 << TTYPE_MCONTROL
+        tinfo_types <<= U(1) << TTYPE_MCONTROL
 
         # Assign read data
         # TDATA0 - only support simple address matching
@@ -826,7 +857,7 @@ def cs_registers(NUM_MHPMCOUNTERS=1):
             mhpmcounter_write_lower <<= CatBits(*mhpmcounter_write_lower_arr)
 
             # Write upper counter bits
-            mhpmcounter_write_upper_arr[wcnt_gidx] <<= (~mhpmcounter_write_lower[wcnt_gidx]) & csr_we_int & (io.csr_addr_i == (CSR_MCYCLEH + wcnt_gidx))
+            mhpmcounter_write_upper_arr[wcnt_gidx] <<= (~mhpmcounter_write_lower[wcnt_gidx]) & csr_we_int & (io.csr_addr_i == (CSR_MCYCLEH + U(wcnt_gidx)))
             mhpmcounter_write_upper <<= CatBits(*mhpmcounter_write_upper_arr)
 
             if wcnt_gidx == 0:
@@ -865,11 +896,10 @@ def cs_registers(NUM_MHPMCOUNTERS=1):
             if cnt_gidx == 1 or cnt_gidx >= (NUM_MHPMCOUNTERS + 3):
                 mhpmcounter_q[cnt_gidx] <<= U(0)
             else:
-                with when(mhpmcounter_write_lower[cnt_gidx]):
-                    mhpmcounter_q[cnt_gidx][31:0] <<= csr_wdata_int
-                with elsewhen(mhpmcounter_write_upper[cnt_gidx]):
-                    mhpmcounter_q[cnt_gidx][63:32] <<= csr_wdata_int
-                with elsewhen(mhpmcounter_write_increment[cnt_gidx]):
+                mhpmcounter_q[cnt_gidx] <<= Mux(mhpmcounter_write_lower[cnt_gidx],
+                                                Mux(mhpmcounter_write_upper[cnt_gidx], CatBits(csr_wdata_int, csr_wdata_int), CatBits(mhpmcounter_q[cnt_gidx][63:32], csr_wdata_int)),
+                                                Mux(mhpmcounter_write_upper[cnt_gidx], CatBits(csr_wdata_int, mhpmcounter_q[cnt_gidx][31:0]), mhpmcounter_q[cnt_gidx]))
+                with when(mhpmcounter_write_increment[cnt_gidx]):
                     mhpmcounter_q[cnt_gidx] <<= mhpmcounter_increment[cnt_gidx]
 
         #   Event Register: mhpevent_q[]
@@ -879,20 +909,28 @@ def cs_registers(NUM_MHPMCOUNTERS=1):
                 mhpmevent.q[evt_gidx] <<= U(0)
             else:
                 if NUM_HPM_EVENTS < 32:
-                    mhpmevent.q[evt_gidx][31:NUM_HPM_EVENTS] <<= U(0)
-                mhpmevent.q[evt_gidx][NUM_HPM_EVENTS-1:0] <<= mhpmevent.n[evt_gidx][NUM_HPM_EVENTS-1:0]
+                    mhpmevent.q[evt_gidx] <<= CatBits(U.w(16)(0), mhpmevent.q[evt_gidx][NUM_HPM_EVENTS-1:0])
+                    # mhpmevent.q[evt_gidx][31:NUM_HPM_EVENTS] <<= U(0)
+                mhpmevent.q[evt_gidx] <<= CatBits(mhpmevent.q[evt_gidx][31:NUM_HPM_EVENTS], mhpmevent.n[evt_gidx][NUM_HPM_EVENTS-1:0])
+                # mhpmevent.q[evt_gidx][NUM_HPM_EVENTS-1:0] <<= mhpmevent.n[evt_gidx][NUM_HPM_EVENTS-1:0]
 
         #   Enable Register: mcounteren_q
         #   Not implement
-        for en_gidx in range(32):
-            mcounteren.q[en_gidx] <<= U(0)
+        mcounteren.q <<= U(0)
 
         #   Inhibit Register: mcountinhibit_q
         #   Note: implemented ocunters are disabled out of reset to save power
-        for inh_gidx in range(32):
-            if inh_gidx == 1 or inh_gidx >= (NUM_MHPMCOUNTERS + 3):
-                mcountinhibit.q[inh_gidx] <<= U(0)
-            else:
-                mcountinhibit.q[inh_gidx] <<= mcountinhibit.n[inh_gidx]
+        #   Something wrong with the bits in registers:
+        #   In here we assumes NUM_MHPMCOUNTERS always as default value 1
+        # for inh_gidx in range(32):
+        #     if inh_gidx == 1 or inh_gidx >= (NUM_MHPMCOUNTERS + 3):
+        #         mcountinhibit.q[inh_gidx] <<= U(0)
+        #     else:
+        #         mcountinhibit.q[inh_gidx] <<= mcountinhibit.n[inh_gidx]
+        mcountinhibit.q <<= CatBits(U.w(28)(0), mcountinhibit.n[3:2], U.w(2)(0))
 
     return CS_REGISTERS()
+
+
+if __name__ == '__main__':
+    Emitter.dumpVerilog_nock(Emitter.dump(Emitter.emit(cs_registers()), "cs_regsiters.fir"))
