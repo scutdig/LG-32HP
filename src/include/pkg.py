@@ -625,3 +625,34 @@ BMASK_A_REG  = U.w(1)(0b0)
 BMASK_A_IMM  = U.w(1)(0b1)
 BMASK_B_REG  = U.w(1)(0b0)
 BMASK_B_IMM  = U.w(1)(0b1)
+
+# CSRs parameters
+C_FFLAG = 5
+C_RM = 3
+
+# Constants for the dcsr.xdebugver fields
+XDEBUGVER_NO = U.w(4)(0)
+XDEBUGVER_STD = U.w(4)(4)
+XDEBUGVER_NONSTD = U.w(4)(15)
+
+# Debug Cause
+DBG_CAUSE_NONE       = U.w(3)(0)
+DBG_CAUSE_EBREAK     = U.w(3)(1)
+DBG_CAUSE_TRIGGER    = U.w(3)(2)
+DBG_CAUSE_HALTREQ    = U.w(3)(3)
+DBG_CAUSE_STEP       = U.w(3)(4)
+DBG_CAUSE_RSTHALTREQ = U.w(3)(5)
+
+# Machine Vendor ID - OpenHW JEDEC ID is '2 decimal (bank 13)'
+MVENDORID_OFFSET = U.w(7)(2)
+MVENDORID_BANK = U.w(25)(0xC)
+
+MARCHID = U.w(32)(0x4)
+
+# Trigger types
+TRIGGER_TYPES_WIDTH = 4
+
+TTYPE_MCONTROL = U.w(4)(0x2)
+TTYPE_ICOUNT = U.w(4)(0x3)
+TTYPE_ITRIGGER = U.w(4)(0x4)
+TTYPE_ETRIGGER = U.w(4)(0x5)
