@@ -20,4 +20,31 @@ Copyright Digisim, Computer Architecture team of South China University of Techn
 """
 from pyhcl import *
 
+# pkg dm
+ProgBufSize = 8             # size of program buffer in junks of 32-bit words
+DataCount = 2               # amount of data count registers implemented
 
+# DTM
+DTM_OP_WIDTH = 2
+
+DTM_NOP = U.w(2)(0)
+DTM_READ = U.w(2)(1)
+DTM_WRITE = U.w(2)(2)
+
+# cmd_e
+CMD_E_WIDTH = 8
+
+AccessRegister = U.w(8)(0)
+QuickAccess = U.w(8)(1)
+AccessMemory = U.w(8)(2)
+
+# cmderr_e
+CMDERR_E_WIDTH = 3
+
+CmdErrNone = U.w(3)(0)
+CmdErrBusy = U.w(3)(1)
+CmdErrNotSupported = U.w(3)(2)
+CmdErrorException = U.w(3)(3)
+CmdErrorHaltResume = U.w(3)(4)
+CmdErrorBus = U.w(3)(5)
+CmdErrorOther = U.w(3)(7)

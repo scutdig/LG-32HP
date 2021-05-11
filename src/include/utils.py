@@ -18,6 +18,7 @@ Copyright Digisim, Computer Architecture team of South China University of Techn
    File Name: utils.py
    Description: Utils functions for processor implementations
 """
+from math import *
 from pyhcl import *
 
 
@@ -56,3 +57,7 @@ def vec_init(size, el, init):
     for i in range(size):
         tmp[i] <<= init
     return tmp
+
+
+def clog2(v):
+    return ceil(log(v, 2))
