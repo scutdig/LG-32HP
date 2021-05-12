@@ -35,6 +35,13 @@ def dm_csrs(NrHarts: int = 1, BusWidth: int = 32):
     ProgBufEnd = 0x20 + ProgBufSize - 1
 
     class DM_CSRS(Module):
+        """
+        Expanded IO ports
+            - dmi_req_i
+            - dmi_resp_o
+            - hartinfo_i
+            - cmd_o
+        """
         io = IO(
             testmode_i=Input(Bool),
             dmi_rst_ni=Input(Bool),         # Debug Module Intf reset active-low
@@ -190,5 +197,65 @@ def dm_csrs(NrHarts: int = 1, BusWidth: int = 32):
         for k in range(NrHarts/2**15+1):
             halted_flat3[k] <<= reduce_or(halted_reshaped2[k], 32)
         haltsum3 <<= halted_flat3
+
+        dmstatus = dmstatus_t()
+        dmcontrol = packed_ff(dmcontrol_t(True), dmcontrol_t(False))
+        abstractcs = abstractcs_t()
+        cmderr = gen_ff(CMDERR_E_WIDTH, 0)
+        command = packed_ff(command_t(True), command_t(False))
+        cmd_valid = gen_ff(1, 0)
+        abstractauto = packed_ff(abstractauto_t(True), abstractauto_t(False))
+        sbcs = packed_ff(sbcs_t(True), sbcs_t(False))
+        sbaddr = gen_ff(64, 0)
+        sbdata = gen_ff(64, 0)
+
+        havereset = gen_ff(NrHarts, 2**NrHarts-1)
+
+        # program buffer
+        progbuf = vec_init(ProgBufSize, U.w(32), 0)
+        data = vec_init(DataCount, U.w(32), 0)
+
+        selected_hart = Wire(U.w(HartSelLen))
+
+        # a successful response returns zero
+        io.dmi_resp_o_resp <<= DTM_SUCCESS
+        io.dmi_resp_valid_o <<= ~resp_queue_empty
+        io.dmi_req_ready_o <<= ~resp_queue_full
+        resp_queue_push <<= io.dmi_req_valid_i & io.dmi_req_ready_o
+        # SBA
+        io.sbautoincrement_o <<= sbcs.q.sbautoincrement
+        io.sbreadonaddr_o <<= sbcs.q.sbreadonaddr
+        io.sbreadondata_o <<= sbcs.q.sbreadondata
+        io.sbaccess_o <<= sbcs.q.sbaccess
+        io.sbdata_o <<= sbdata.q[BusWidth-1:0]
+        io.sbaddress_o <<= sbaddr.q[BusWidth-1:0]
+
+        io.hartsel_o <<= CatBits(dmcontrol.q.haartselhi, dmcontrol.q.hartsello)
+
+        # needed to avoid lint warnings
+        havereset_d_aligned, havereset_q_aligned, resumeack_aligned, unavailable_aligned, halted_aligned = [Wire(U.w(NrHartsAligned)) for _ in range(5)]
+        resumeack_aligned <<= io.resumeack_i
+        unavailable_aligned <<= io.unavailable_i
+        halted_aligned <<= io.halted_i
+
+        havereset.n <<= havereset_d_aligned
+        havereset_q_aligned <<= havereset.q
+
+        # Original code here, hartinfo_aligned is defined as hartinfo_t (packed)
+        # But actually we don't need to split them
+        hartinfo_aligned = Wire(U.w(NrHartsAligned))
+        hartinfo_aligned <<= U(0)
+        hartinfo_aligned <<= CatBits(U.w(NrHartsAligned-NrHarts)(0), io.hartinfo_i_zero1, io.hartinfo_i_nscratch,
+                                     io.hartinfo_i_zero0, io.hartinfo_i_dataaccess, io.hartinfo_i_datasize, io.hartinfo_i_dataaddr)
+
+        # helper variables
+        dm_csr_addr = Wire(U.w(DM_CSR_E_WIDTH))
+        sbcs = sbcs_t(False)
+        a_abstractcs = abstractcs_t()
+        autoexecdata_idx = Wire(U.w(4))    # 0 == Data0 ... 11 == Data11
+
+        # Get the data index, i.e. 0 for Data0 up to 11 for Data11
+        dm_csr_addr <<= CatBits(U.w(1)(0), io.dmi_req_i_addr)
+        autoexecdata_idx <<= dm_csr_addr - Data0
 
     return DM_CSRS()
