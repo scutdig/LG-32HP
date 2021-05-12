@@ -51,6 +51,95 @@ CmdErrorOther = U.w(3)(7)
 
 DTM_SUCCESS = U.w(2)(0)
 
+
+# Packed structs
+class dmstatus_t:
+    def __init__(self):
+        # This struct only use in non-state elements
+        self.zero1 = Wire(U.w(9))
+        self.impebreak = Wire(Bool)
+        self.zero0 = Wire(U.w(2))
+        self.allhavereset = Wire(Bool)
+        self.anyhavereset = Wire(Bool)
+        self.allresumeack = Wire(Bool)
+        self.anyresumeack = Wire(Bool)
+        self.allnonexistent = Wire(Bool)
+        self.anynonexistent = Wire(Bool)
+        self.allunavail = Wire(Bool)
+        self.anyunavail = Wire(Bool)
+        self.allrunning = Wire(Bool)
+        self.anyrunning = Wire(Bool)
+        self.allhalted = Wire(Bool)
+        self.anyhalted = Wire(Bool)
+        self.authenticated = Wire(Bool)
+        self.authbusy = Wire(Bool)
+        self.hasresethaltreq = Wire(Bool)
+        self.devtreevalid = Wire(Bool)
+        self.version = Wire(U.w(4))
+
+
+class dmcontrol_t:
+    def __init__(self, q: bool):
+        self.haltreq = RegInit(Bool(False)) if q else Wire(Bool)
+        self.resumereq = RegInit(Bool(False)) if q else Wire(Bool)
+        self.hartreset = RegInit(Bool(False)) if q else Wire(Bool)
+        self.ackhavereset = RegInit(Bool(False)) if q else Wire(Bool)
+        self.zero1 = RegInit(Bool(False)) if q else Wire(Bool)
+        self.hasel = RegInit(Bool(False)) if q else Wire(Bool)
+        self.hartsello = RegInit(U.w(10)(0)) if q else Wire(U.w(10))
+        self.hartselhi = RegInit(U.w(10)(0)) if q else Wire(U.w(10))
+        self.zero = RegInit(U.w(2)(0)) if q else Wire(U.w(2))
+        self.setresethaltreq = RegInit(Bool(False)) if q else Wire(Bool)
+        self.clrresethaltreq = RegInit(Bool(False)) if q else Wire(Bool)
+        self.ndmreset = RegInit(Bool(False)) if q else Wire(Bool)
+        self.dmactive = RegInit(Bool(False)) if q else Wire(Bool)
+
+
+class abstractcs_t:
+    def __init__(self):
+        self.zero3 = Wire(U.w(3))
+        self.progbufsize = Wire(U.w(5))
+        self.zero2 = Wire(U.w(11))
+        self.busy = Wire(Bool)
+        self.zero1 = Wire(Bool)
+        self.cmderr = Wire(U.w(CMDERR_E_WIDTH))
+        self.zero0 = Wire(U.w(4))
+        self.datacount = Wire(U.w(4))
+
+
+class command_t:
+    def __init__(self, q: bool):
+        self.cmdtype = RegInit(U.w(CMD_E_WIDTH)(0)) if q else Wire(U.w(CMD_E_WIDTH))
+        self.control = RegInit(U.w(24)(0)) if q else Wire(U.w(24))
+
+
+class abstractauto_t:
+    def __init__(self, q: bool):
+        self.autoexecprogbuf = RegInit(U.w(16)(0)) if q else Wire(U.w(16))
+        self.zero0 = RegInit(U.w(4)(0)) if q else Wire(U.w(4))
+        self.autoexecdata = RegInit(U.w(12)(0)) if q else Wire(U.w(12))
+
+
+class sbcs_t:
+    def __init__(self, q: bool):
+        self.sbversion = RegInit(U.w(3)(0)) if q else Wire(U.w(3))
+        self.zero0 = RegInit(U.w(6)(0)) if q else Wire(U.w(6))
+        self.sbbusyerror = RegInit(Bool(False)) if q else Wire(Bool)
+        self.sbbusy = RegInit(Bool(False)) if q else Wire(Bool)
+        self.sbreadonaddr = RegInit(Bool(False)) if q else Wire(Bool)
+        self.sbaccess = RegInit(U.w(3)(0)) if q else Wire(U.w(3))
+        self.sbautoincrement = RegInit(Bool(False)) if q else Wire(Bool)
+        self.sbreadondata = RegInit(Bool(False)) if q else Wire(Bool)
+        self.sberror = RegInit(U.w(3)(0)) if q else Wire(U.w(3))
+        self.sbasize = RegInit(U.w(7)(0)) if q else Wire(U.w(7))
+        self.sbaccess128 = RegInit(Bool(False)) if q else Wire(Bool)
+        self.sbaccess64 = RegInit(Bool(False)) if q else Wire(Bool)
+        self.sbaccess32 = RegInit(Bool(False)) if q else Wire(Bool)
+        self.sbaccess16 = RegInit(Bool(False)) if q else Wire(Bool)
+        self.sbaccess8 = RegInit(Bool(False)) if q else Wire(Bool)
+
+DTM_SUCCESS = U.w(2)(0)
+
 # debug registers
 DM_CSR_E_WIDTH = 8
 
