@@ -149,5 +149,46 @@ def dm_csrs(NrHarts: int = 1, BusWidth: int = 32):
         halted_flat1, halted_flat2 = [Wire(U.w(((NrHarts-1)/2**10+1)*32-1)) for _ in range(2)]
         halted_flat3 = Wire(U.w(32))
 
+        # haltsum0
+        hartsel_idx0 = Wire(U.w(15))
+        halted <<= U(0)
+        haltsum0 <<= U(0)
+        hartsel_idx0 <<= io.hartsel_o[19:5]
+        halted[NrHarts-1:0] = io.halted_i
+        halted_reshaped0 <<= halted
+        with when(hartsel_idx0 < U((NrHarts-1)/2**5+1)):
+            haltsum0 <<= halted_reshaped0[hartsel_idx0]
+
+        # haltsum1
+        hartsel_idx1 = Wire(U.w(10))
+        halted_flat1 <<= U(0)
+        haltsum1 <<= U(0)
+        hartsel_idx1 <<= io.hartsel_o[19:10]
+
+        for k in range((NrHarts-1)/2**5+1):
+            halted_flat1[k] <<= reduce_or(halted_reshaped0[k], 32)
+        halted_reshaped1 <<= halted_flat1
+
+        with when(hartsel_idx1 < U((NrHarts-1)/2**10+1)):
+            haltsum1 <<= halted_reshaped1[hartsel_idx1]
+
+        # haltsum2
+        hartsel_idx2 = Wire(U.w(5))
+        halted_flat2 <<= U(0)
+        haltsum2 <<= U(0)
+        hartsel_idx2 <<= io.hartsel_o[19:15]
+
+        for k in range((NrHarts-1)/2**10+1):
+            halted_flat2[k] <<= reduce_or(halted_reshaped1[k], 32)
+        halted_reshaped2 <<= halted_flat2
+
+        with when(hartsel_idx2 < U((NrHarts-1)/2**15+1)):
+            haltsum2 <<= halted_reshaped2[hartsel_idx2]
+
+        # haltsum3
+        halted_flat3 <<= U(0)
+        for k in range(NrHarts/2**15+1):
+            halted_flat3[k] <<= reduce_or(halted_reshaped2[k], 32)
+        haltsum3 <<= halted_flat3
 
     return DM_CSRS()

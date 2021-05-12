@@ -61,3 +61,10 @@ def vec_init(size, el, init):
 
 def clog2(v):
     return ceil(log(v, 2))
+
+
+def reduce_or(el, width):
+    tmp = el[width-1]
+    for i in range(width-2, -1, -1):
+        tmp = tmp | el[i]
+    return tmp
