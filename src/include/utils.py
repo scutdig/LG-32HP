@@ -18,6 +18,7 @@ Copyright Digisim, Computer Architecture team of South China University of Techn
    File Name: utils.py
    Description: Utils functions for processor implementations
 """
+from math import *
 from pyhcl import *
 
 
@@ -56,3 +57,36 @@ def vec_init(size, el, init):
     for i in range(size):
         tmp[i] <<= init
     return tmp
+
+
+def clog2(v):
+    return ceil(log(v, 2))
+
+
+def reduce_or(el, width):
+    tmp = el[width-1]
+    for i in range(width-2, -1, -1):
+        tmp = tmp | el[i]
+    return tmp
+
+
+# For Log2
+divideAndConquerThreshold = 4
+
+
+def Log2(x, width: int):
+    """
+        Returns the base-2 integer logarithm of the least-significant width bits of an UInt
+    """
+    if width < 2:
+        return U(0)
+    elif width == 2:
+        return x[1]
+    elif width <= divideAndConquerThreshold:
+        return Mux(x[width-1], U(width-1), Log2(x, width-1))
+    else:
+        mid = int(1 << (clog2(width) - 1))
+        hi = x[width-1:mid]
+        lo = x[mid-1:0]
+        useHi = reduce_or(hi, width - mid)
+        return CatBits(useHi, Mux(useHi, Log2(hi, width - mid), Log2(lo, mid)))

@@ -873,10 +873,9 @@ def cs_registers(NUM_MHPMCOUNTERS=1):
                                                                hpm_events[1]
             elif 2 < wcnt_gidx < (NUM_MHPMCOUNTERS + 3):
                 reduce_tmp = hpm_events & mhpmevent.q[wcnt_gidx][NUM_HPM_EVENTS-1:0]
-                reduce_res = Wire(Bool)
-                reduce_res <<= reduce_tmp[NUM_HPM_EVENTS-1]
+                reduce_res = reduce_tmp[NUM_HPM_EVENTS-1]
                 for i in range(NUM_HPM_EVENTS-2, -1, -1):
-                    reduce_res <<= reduce_res | reduce_tmp[i]
+                    reduce_res = reduce_res | reduce_tmp[i]
                 mhpmcounter_write_increment_arr[wcnt_gidx] <<= (~mhpmcounter_write_lower[wcnt_gidx]) & \
                                                                (~mhpmcounter_write_upper[wcnt_gidx]) & \
                                                                (~mcountinhibit.q[wcnt_gidx]) & reduce_res
@@ -933,4 +932,4 @@ def cs_registers(NUM_MHPMCOUNTERS=1):
 
 
 if __name__ == '__main__':
-    Emitter.dumpVerilog_nock(Emitter.dump(Emitter.emit(cs_registers()), "cs_regsiters.fir"))
+    Emitter.dumpVerilog(Emitter.dump(Emitter.emit(cs_registers()), "cs_regsiters.fir"))
