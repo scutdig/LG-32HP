@@ -68,3 +68,25 @@ def reduce_or(el, width):
     for i in range(width-2, -1, -1):
         tmp = tmp | el[i]
     return tmp
+
+
+# For Log2
+divideAndConquerThreshold = 4
+
+
+def Log2(x, width: int):
+    """
+        Returns the base-2 integer logarithm of the least-significant width bits of an UInt
+    """
+    if width < 2:
+        return U(0)
+    elif width == 2:
+        return x[1]
+    elif width <= divideAndConquerThreshold:
+        return Mux(x[width-1], U(width-1), Log2(x, width-1))
+    else:
+        mid = int(1 << (clog2(width) - 1))
+        hi = x[width-1:mid]
+        lo = x[mid-1:0]
+        useHi = reduce_or(hi, width - mid)
+        return CatBits(useHi, Mux(useHi, Log2(hi, width - mid), Log2(lo, mid)))
