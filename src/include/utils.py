@@ -59,6 +59,18 @@ def vec_init(size, el, init):
     return tmp
 
 
+def vec_init_wire(size, el, init):
+    tmp = Wire(Vec(size, el))
+    for i in range(size):
+        tmp[i] <<= init
+    return tmp
+
+
+def vec_assign(size, v, rhs):
+    for i in range(size):
+        v[i] <<= rhs[i]
+
+
 def clog2(v):
     return ceil(log(v, 2))
 

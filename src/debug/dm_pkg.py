@@ -25,6 +25,12 @@ DbgVersion013 = U.w(4)(2)
 ProgBufSize = 8             # size of program buffer in junks of 32-bit words
 DataCount = 2               # amount of data count registers implemented
 
+HaltAddress = U.w(64)(0x800)
+ResumeAddress = HaltAddress + U(4)
+ExecptionAddress = HaltAddress + U(8)
+
+DataAddr = U.w(12)(0x380)   # we are aligned with Rocket here
+
 # DTM
 DTM_OP_WIDTH = 2
 
@@ -305,6 +311,32 @@ class sbcs_t:
 #     l.sbaccess16 <<= r.sbaccess16
 #     l.sbaccess8 <<= r.sbaccess8
 
+
+class ac_ar_cmd_t:
+    def __init__(self):
+        self.zero1 = Wire(Bool)
+        self.aarsize = Wire(U.w(3))
+        self.aarpostincrement = Wire(Bool)
+        self.postexec = Wire(Bool)
+        self.transfer = Wire(Bool)
+        self.write = Wire(Bool)
+        self.regno = Wire(U.w(16))
+
+        self.packed = Wire(U.w(32))
+        self.packed <<= CatBits(self.zero1, self.aarsize, self.aarpostincrement, self.postexec,
+                                self.transfer, self.write, self.regno)
+
+        self.clear()
+
+    def clear(self):
+        self.zero1 <<= U(0)
+        self.aarsize <<= U(0)
+        self.aarpostincrement <<= U(0)
+        self.postexec <<= U(0)
+        self.transfer <<= U(0)
+        self.write <<= U(0)
+        self.regno <<= U(0)
+
 # debug registers
 DM_CSR_E_WIDTH = 8
 
@@ -373,3 +405,49 @@ Read = U.w(3)(1)
 Write = U.w(3)(2)
 WaitRead = U.w(3)(3)
 WaitWrite = U.w(3)(4)
+
+# Instruction Generation Helpers
+
+
+def jal(rd, imm):
+    return CatBits(imm[20], imm[10:1], imm[11]. imm[19:12], rd[4:0], U.w(7)(0x6f))
+
+
+def jalr(rd, rs1, offset):
+    return CatBits(offset[11:0], rs1[4:0], U.w(3)(0), rd[4:0], U.w(7)(0x67))
+
+
+def andi(rd, rs1, imm):
+    return CatBits(imm[11:0], rs1[4:0], U.w(3)(0x7), rd[4:0], U.w(7)(0x13))
+
+
+def slli(rd, rs1, shamt):
+    return CatBits(U.w(6)(0), shamt[5:0], rs1[4:0], U.w(3)(1), rd[4:0], U.w(7)(0x13))
+
+
+def srli(rd, rs1, shamt):
+    return CatBits(U.w(6)(0), shamt[5:0], rs1[4:0], U.w(3)(0x5), rd[4:0], U.w(7)(0x13))
+
+
+def load(size, dest, base, offset):
+    return CatBits(offset[11:0], base[4:0], size[2:0], dest[4:0], U.w(7)(0x03))
+
+
+def auipc(rd, imm):
+    return CatBits(imm[20], imm[10:1], imm[11], imm[19:12], rd[4:0], U.w(7)(0x17))
+
+
+def nop():
+    return U.w(32)(0x00000013)
+
+
+def illegal():
+    return U.w(32)(0x00000000)
+
+
+def ebreak():
+    return U.w(32)(0x00100073)
+
+
+def csrr(csr, dest):
+    return CatBits(csr[11:0], U.w(5)(0), U.w(3)(0x2), dest, U.w(7)(0x73))
