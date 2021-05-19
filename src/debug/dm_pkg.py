@@ -363,3 +363,13 @@ SBData1      = U.w(8)(0x3D)
 SBData2      = U.w(8)(0x3E)
 SBData3      = U.w(8)(0x3F)
 HaltSum0     = U.w(8)(0x40)
+
+# SBA state
+
+SBA_STATE_E_WIDTH = 3
+
+Idle = U.w(3)(0)
+Read = U.w(3)(1)
+Write = U.w(3)(2)
+WaitRead = U.w(3)(3)
+WaitWrite = U.w(3)(4)
