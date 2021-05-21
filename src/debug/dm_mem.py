@@ -24,16 +24,30 @@ from src.include.utils import *
 from src.include.pkg import *
 
 
+class debug_rom(BlackBox):
+    io = IO(
+        addr_i=Input(U.w(64)),
+        rdata_o=Output(U.w(64))
+    )
+
+
+class debug_rom_one_scratch(BlackBox):
+    io = IO(
+        addr_i=Input(U.w(64)),
+        rdata_o=Output(U.w(64))
+    )
+
+
 def dm_mem(NrHarts: int = 1, BusWidth: int = 32, DmBaseAddress: int = 0):
     # local parameters
-    SelectableHarts = CatBits(*[U.w(1)(1) * NrHarts])
+    SelectableHarts = CatBits(*[U.w(1)(1) for _ in range(NrHarts)])
     DbgAddressBits: int = 12
     HartSelLen: int = 1 if NrHarts == 1 else clog2(NrHarts)
     NrHartsAligned: int = 2 ** HartSelLen
     MaxAar: int = 4 if BusWidth == 64 else 3
     HasSndScratch = (U(DmBaseAddress) != U(0))
     # Depending on whether we are at the zero page or not we either use 'x0' of 'x10/a0'
-    LoadBaseAddr = Mux(U(DmBaseAddress == U(0)), U.w(5)(0), U.w(5)(10))
+    LoadBaseAddr = Mux(U(DmBaseAddress) == U(0), U.w(5)(0), U.w(5)(10))
 
     DataBaseAddr = DataAddr
     DataEndAddr = DataAddr + U(4) * U(DataCount) - U(1)
@@ -42,14 +56,14 @@ def dm_mem(NrHarts: int = 1, BusWidth: int = 32, DmBaseAddress: int = 0):
     AbstractCmdBaseAddr = ProgBufBaseAddr - U(40)
     AbstractCmdEndAddr = ProgBufBaseAddr - U(1)
 
-    WhereToAddr = U(0x300)
-    FlagsBaseAddr = U(0x400)
-    FlagsEndAddr = U(0x7FF)
+    WhereToAddr = U.w(12)(0x300)
+    FlagsBaseAddr = U.w(12)(0x400)
+    FlagsEndAddr = U.w(12)(0x7FF)
 
-    HaltedAddr = U(0x100)
-    GoingAddr = U(0x104)
-    ResumingAddr = U(0x108)
-    ExceptionAddr = U(0x10C)
+    HaltedAddr = U.w(12)(0x100)
+    GoingAddr = U.w(12)(0x104)
+    ResumingAddr = U.w(12)(0x108)
+    ExceptionAddr = U.w(12)(0x10C)
 
     # FSM
     STATE_E_WIDTH = 2
@@ -95,6 +109,7 @@ def dm_mem(NrHarts: int = 1, BusWidth: int = 32, DmBaseAddress: int = 0):
             be_i=Input(U.w(int(BusWidth/8))),
             rdata_o=Output(U.w(BusWidth))
         )
+
         cmd_i = command_t(False)
         cmd_i.cmdtype <<= io.cmd_i[31:24]
         cmd_i.control <<= io.cmd_i[23:0]
@@ -115,20 +130,30 @@ def dm_mem(NrHarts: int = 1, BusWidth: int = 32, DmBaseAddress: int = 0):
         # this is needed to avoid lint warnings related to array indexing
         # resize hartsel to valid range
         hartsel, wdata_hartsel = [Wire(U.w(HartSelLen)) for _ in range(2)]
+        hartsel <<= io.hartsel_i[HartSelLen-1:0]
+        wdata_hartsel <<= io.wdata_i[HartSelLen-1:0]
 
         resumereq_aligned, haltreq_aligned, halted_d_aligned, halted_aligned, \
         resumereq_wdata_aligned, resuming_d_aligned = [vec_init_wire(NrHartsAligned, Bool, Bool(False)) for _ in range(6)]
 
         halted_q_aligned, resuming_q_aligned = [vec_init(NrHartsAligned, Bool, Bool(False)) for _ in range(2)]
 
-        vec_assign(NrHartsAligned, resumereq_aligned, io.resumereq_i)
-        vec_assign(NrHartsAligned, haltreq_aligned, io.haltreq_i)
-        vec_assign(NrHartsAligned, resumereq_wdata_aligned, io.resumereq_i)
+        # vec_assign(NrHartsAligned, resumereq_aligned, io.resumereq_i)
+        # vec_assign(NrHartsAligned, haltreq_aligned, io.haltreq_i)
+        # vec_assign(NrHartsAligned, resumereq_wdata_aligned, io.resumereq_i)
+        for i in range(NrHartsAligned):
+            resumereq_aligned[i] <<= io.resumereq_i
+            haltreq_aligned[i] <<= io.haltreq_i
+            resumereq_wdata_aligned[i] <<= io.resumereq_i
+            halted_q_aligned[i] <<= halted.q
+            resuming_q_aligned[i] <<= resuming.q
 
-        vec_assign(NrHartsAligned, halted_q_aligned, halted.q)
-        vec_assign(NrHartsAligned, halted.d, halted_d_aligned)
-        vec_assign(NrHartsAligned, resuming_q_aligned, resuming.q)
-        vec_assign(NrHartsAligned, resuming.d, resuming_d_aligned)
+        # vec_assign(NrHartsAligned, halted_q_aligned, halted.q)
+        # vec_assign(NrHartsAligned, halted.n, halted_d_aligned)
+        halted.n <<= CatBits(*halted_d_aligned)
+        # vec_assign(NrHartsAligned, resuming_q_aligned, resuming.q)
+        # vec_assign(NrHartsAligned, resuming.n, resuming_d_aligned)
+        resuming.n <<= CatBits(*resuming_q_aligned)
 
         # distinguish whether we need to forward data from the ROM or the FSM
         # latch the address for this
@@ -137,13 +162,14 @@ def dm_mem(NrHarts: int = 1, BusWidth: int = 32, DmBaseAddress: int = 0):
         ac_ar = ac_ar_cmd_t()
 
         # Abstract Command Access Register
-        ac_ar <<= io.cmd_i
+        ac_ar.packed <<= io.cmd_i
         io.debug_req_o <<= io.haltreq_i
         io.halted_o <<= halted.q
         io.resuming_o <<= resuming.q
 
-        # reshapge progbuf
-        progbuf <<= io.progbuf_i
+        # reshape progbuf
+        for i in range(int(ProgBufSize/2)):
+            progbuf[i] <<= CatBits(io.progbuf_i[i*2+1], io.progbuf_i[i*2])
 
         state = gen_ff(STATE_E_WIDTH, 0)
 
@@ -215,16 +241,21 @@ def dm_mem(NrHarts: int = 1, BusWidth: int = 32, DmBaseAddress: int = 0):
         data_bits = Wire(U.w(64))
         rdata_vec = vec_init_wire(8, U.w(8), U(0))
 
-        vec_assign(NrHartsAligned, halted_d_aligned, halted.q)
-        vec_assign(NrHartsAligned, resuming_d_aligned, resuming.q)
+        # vec_assign(NrHartsAligned, halted_d_aligned, halted.q)
+        # vec_assign(NrHartsAligned, resuming_d_aligned, resuming.q)
+        for i in range(NrHartsAligned):
+            halted_d_aligned[i] <<= halted.q
+            resuming_d_aligned[i] <<= resuming.q
         rdata.n <<= rdata.q
         # convert the data in bits representation
-        data_bits <<= io.data_i
+        data_bits <<= CatBits(*io.data_i)
 
         # write data in csr register
         io.data_valid_o <<= Bool(False)
         exception <<= Bool(False)
-        halted_aligned <<= U(0)
+        # halted_aligned <<= U(0)
+        for i in range(NrHartsAligned):
+            halted_aligned[i] <<= U(0)
         going <<= Bool(False)
 
         #  The resume ack signal is lowered when the resume request is deasserted
@@ -247,9 +278,15 @@ def dm_mem(NrHarts: int = 1, BusWidth: int = 32, DmBaseAddress: int = 0):
                     exception <<= Bool(True)
                 with elsewhen((io.addr_i[DbgAddressBits-1:0] >= DataBaseAddr) &
                               (io.addr_i[DbgAddressBits-1:0] <= DataEndAddr)):
-                    io.dataa_valid_o <<= Bool(True)
-                    data_bits <<= CatBits(*[Mux(io.be_i[i], io.wdata[i*8+7:i*8], U.w(8)(0))
-                                            for i in range(int(BusWidth/8)-1, -1, -1)])
+                    io.data_valid_o <<= Bool(True)
+                    # data_bits <<= CatBits(*[Mux(io.be_i[i], io.wdata[i*8+7:i*8], U.w(8)(0))
+                    #                         for i in range(int(BusWidth/8)-1, -1, -1)])
+                    # Ignore parameters:
+                    data_bits <<= CatBits(Mux(io.be_i[3], io.wdata_i[31:24], U.w(8)(0)),
+                                          Mux(io.be_i[2], io.wdata_i[23:16], U.w(8)(0)),
+                                          Mux(io.be_i[1], io.wdata_i[15:8], U.w(8)(0)),
+                                          Mux(io.be_i[0], io.wdata_i[7:0], U.w(8)(0)),)
+
             # this is a read
             with otherwise():
                 with when(io.addr_i[DbgAddressBits-1:0] == WhereToAddr):
@@ -286,16 +323,18 @@ def dm_mem(NrHarts: int = 1, BusWidth: int = 32, DmBaseAddress: int = 0):
                 with elsewhen((io.addr_i[DbgAddressBits-1:0] >= FlagsBaseAddr) & (io.addr_i[DbgAddressBits-1:0] <= FlagsEndAddr)):
                     # release the corresponding hart
                     with when(CatBits(io.addr_i[DbgAddressBits-1:3], U.w(3)(0)) - FlagsBaseAddr[DbgAddressBits-1:0] ==
-                              (hartsel & CatBits(CatBits(*[U.w(1)(1) * (DbgAddressBits-3)]), U.w(3)(0)))):
-                        rdata_vec[hartsel & U.w(3)(0x111)] <<= CatBits(U.w(6)(0), resume, go)
-                    rdata.n <<= CatBits(*rdata)
-        io.data_o <<= data_bits
+                              (hartsel & CatBits(CatBits(*[U.w(1)(1) for _ in range(DbgAddressBits-3)]), U.w(3)(0)))):
+                        rdata_vec[hartsel & U.w(3)(0b111)] <<= CatBits(U.w(6)(0), resume, go)
+                    rdata.n <<= CatBits(*rdata_vec)
+        # io.data_o <<= data_bits
+        io.data_o[0] <<= data_bits[31:0]
+        io.data_o[1] <<= data_bits[63:32]
 
         # this abstract command is currently unsupported
         unsupported_command <<= Bool(False)
         # default memory
         # if ac_ar.transfer si not set then we can take a shortcut to the program buffer
-        abstract_cmd[0] <<= CatBits(Mux(HasSndScratch, auipc(U.w(5)(0x10), U(0)), nop()), illegal())
+        abstract_cmd[0] <<= CatBits(Mux(HasSndScratch, auipc(U.w(5)(0x10), U.w(21)(0)), nop()), illegal())
         abstract_cmd[1] <<= CatBits(Mux(HasSndScratch, slli(U.w(5)(10), U.w(5)(10), U.w(6)(12)), nop()),
                                     Mux(HasSndScratch, srli(U.w(5)(10), U.w(5)(10), U.w(6)(12)), nop()))
         abstract_cmd[2] <<= CatBits(nop(), nop())
@@ -305,4 +344,115 @@ def dm_mem(NrHarts: int = 1, BusWidth: int = 32, DmBaseAddress: int = 0):
         abstract_cmd[6] <<= U(0)
         abstract_cmd[7] <<= U(0)
 
+        # this depends on the command being executed
+        # --------------------
+        # Access Register
+        with when(cmd_i.cmdtype == AccessRegister):
+            with when((ac_ar.aarsize < U(MaxAar)) & ac_ar.transfer & ac_ar.write):
+                # store a0 in dscratch1
+                abstract_cmd[0] <<= CatBits(abstract_cmd[0][63:32], Mux(HasSndScratch, csrw(CSR_DSCRATCH1, U.w(5)(10)), nop()))
+                # this range is reserved
+                with when(ac_ar.regno[15:14] != U(0)):
+                    abstract_cmd[0] <<= CatBits(abstract_cmd[0][63:32], ebreak())   # we leave asap
+                    unsupported_command <<= Bool(True)
+                # A0 access needs to be handled separately, as we use A0 to load
+                # the DM address offset need to access DSCRATCH1 in this case
+                with elsewhen(HasSndScratch & ac_ar.regno[12] & (~ac_ar.regno[5]) &
+                              (ac_ar.regno[4:0] == U.w(5)(10))):
+                    # store s0 in dscratch / load from data register
+                    abstract_cmd[2] <<= CatBits(load(ac_ar.aarsize, U.w(5)(8), LoadBaseAddr, DataAddr),
+                                                csrw(CSR_DSCRATCH0, U.w(5)(8)))
+                    # and store it in the corresponding CSR / restore s0 again from dscratch
+                    abstract_cmd[3] <<= CatBits(csrr(CSR_DSCRATCH0, U.w(5)(8)), csrw(CSR_DSCRATCH1, U.w(5)(8)))
+                # GPR/FPR access
+                with elsewhen(ac_ar.regno[12]):
+                    # determine whether we want to access the floating point regsiter or not
+                    with when(ac_ar.regno[5]):
+                        abstract_cmd[2] <<= CatBits(abstract_cmd[2][63:32], float_load(ac_ar.aarsize, ac_ar.regno[4:0],
+                                                                                       LoadBaseAddr, DataAddr))
+                    with otherwise():
+                        abstract_cmd[2] <<= CatBits(abstract_cmd[2][63:32], load(ac_ar.aarsize, ac_ar.regno[4:0],
+                                                                                 LoadBaseAddr, DataAddr))
+                # CSR access
+                with otherwise():
+                    # data register to CSR
+                    abstract_cmd[2] <<= CatBits(load(ac_ar.aarsize, U.w(5)(8), LoadBaseAddr, DataAddr),
+                                                csrw(CSR_DSCRATCH0, U.w(5)(8)))
+                    abstract_cmd[3] <<= CatBits(csrr(CSR_DSCRATCH0, U.w(5)(8)),
+                                                csrw(ac_ar.regno[11:0], U.w(5)(8)))
+            with elsewhen((ac_ar.aarsize < U(MaxAar)) & ac_ar.transfer & (~ac_ar.write)):
+                # store a0 in dscratch1
+                abstract_cmd[0] <<= CatBits(abstract_cmd[0][63:32],
+                                            Mux(HasSndScratch, csrw(CSR_DSCRATCH1, LoadBaseAddr), nop()))
+                # this range is reserved
+                with when(ac_ar.regno[15:14] != U(0)):
+                    abstract_cmd[0] <<= CatBits(abstract_cmd[0][63:32], ebreak())   # we leave asap
+                    unsupported_command <<= Bool(True)
+                # A0 access needs to be handled separately, as we use A0 to load
+                # the DM address offset need to access DSCRATCH1 in this case
+                with elsewhen(HasSndScratch & ac_ar.regno[12] & (~ac_ar.regno[5]) & (ac_ar.regno[4:0] == U.w(5)(10))):
+                    abstract_cmd[2] <<= CatBits(csrr(CSR_DSCRATCH1, U.w(5)(8)), csrw(CSR_DSCRATCH0, U.w(5)(8)))
+                    abstract_cmd[3] <<= CatBits(csrr(CSR_DSCRATCH0, U.w(5)(8)),
+                                                store(ac_ar.aarsize, U.w(5)(8), LoadBaseAddr, DataAddr))
+                # GPR/FPR access
+                with elsewhen(ac_ar.regno[12]):
+                    # determine whether we want to access the floating point register or not
+                    with when(ac_ar.regno[5]):
+                        abstract_cmd[2] <<= CatBits(abstract_cmd[2][63:32],
+                                                    float_store(ac_ar.aarsize, ac_ar.regno[4:0], LoadBaseAddr, DataAddr))
+                    with otherwise():
+                        abstract_cmd[2] <<= CatBits(abstract_cmd[2][63:32],
+                                                    store(ac_ar.aarsize, ac_ar.regno[4:0], LoadBaseAddr, DataAddr))
+                # CSR access
+                with otherwise():
+                    abstract_cmd[2] <<= CatBits(csrr(ac_ar.regno[11:0], U.w(5)(8)), csrw(CSR_DSCRATCH0, U.w(5)(8)))
+                    abstract_cmd[3] <<= CatBits(csrr(CSR_DSCRATCH0, U.w(5)(8)),
+                                                store(ac_ar.aarsize, U.w(5)(8), LoadBaseAddr, DataAddr))
+            with elsewhen((ac_ar.aarsize >= U(MaxAar)) | ac_ar.aarpostincrement):
+                # this should happend when e.g. ac_ar.aarsize >= MaxAar
+                # Openocd will try to do an access with aarsize=64 bits
+                # first before falling back to 32 bits.
+                abstract_cmd[0] <<= CatBits(abstract_cmd[0][63:32], ebreak())
+                unsupported_command <<= Bool(True)
+
+            # Check whether we need to execute the program buffer. When we
+            # get an unsupported command we really should abort instead of
+            # still trying to execute the program buffer, makes it easier
+            # for the debugger to recover
+            with elsewhen(ac_ar.postexec & (~unsupported_command)):
+                # issue a nop, we will automatically run into the program buffer
+                abstract_cmd[4] <<= CatBits(nop(), abstract_cmd[4][31:0])
+        # not supported at the moment
+        # default
+        with otherwise():
+            abstract_cmd[0] <<= CatBits(abstract_cmd[0][63:32], ebreak())
+            unsupported_command <<= Bool(True)
+
+        rom_addr = Wire(U.w(64))
+        rom_addr <<= io.addr_i
+
+        with when(HasSndScratch):
+            debug_rom_i = debug_rom().io
+            debug_rom_i.addr_i <<= rom_addr
+            rom_rdata <<= debug_rom_i.rdata_o
+        with otherwise():
+            debug_rom_one_scratch_i = debug_rom_one_scratch().io
+            debug_rom_one_scratch_i.addr_i <<= rom_addr
+            rom_rdata <<= debug_rom_one_scratch_i.rdata_o
+
+        fwd_rom.n <<= io.addr_i[DbgAddressBits-1:0] >= HaltAddress[DbgAddressBits-1:0]
+
+        # ff
+        fwd_rom.q <<= fwd_rom.n
+        rdata.q <<= rdata.n
+        state.q <<= state.n
+        word_enable32_q <<= io.addr_i[2]
+
+        halted.q <<= SelectableHarts & halted.n
+        resuming.q <<= SelectableHarts & resuming.n
+
     return DM_MEM()
+
+
+if __name__ == '__main__':
+    Emitter.dumpVerilog_nock(Emitter.dump(Emitter.emit(dm_mem()), "dm_mem.fir"))
